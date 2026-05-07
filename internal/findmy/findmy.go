@@ -163,26 +163,39 @@ func PreparePeople() (*Window, error) {
 }
 
 // ParsePeople groups OCR lines from the People sidebar into Person records.
-// The sidebar is the leftmost ~340pt strip; the tab strip ends around y=160 in
-// 2x retina pixels, and each row card is ~210px tall in retina coordinates.
-// We pair lines by y-band: a name line is followed by a location/staleness
-// line within 60px below it, and a distance line shares the band to the right.
-func ParsePeople(lines []TextLine, sidebarRightPx int) []Person {
-	type entry struct {
-		line  TextLine
-		inSB  bool
-		inTab bool
-	}
-	rows := make([]entry, 0, len(lines))
+// The sidebar layout (in image pixels) has three bands:
+//
+//	avatar:     x ≈   0–200   (round photo with initials — OCR noise lives here)
+//	text:       x ≈ 240–550   (name and location/staleness)
+//	distance:   x ≈ 580–700   ("1,971 mi" right-aligned to row top)
+//
+// We discard the avatar band entirely (it produces low-confidence fragments
+// like "Is" or "rk" from initials and shadows that otherwise get misread as
+// person names), then walk the remaining lines top-to-bottom.
+func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
+	rows := make([]TextLine, 0, len(lines))
 	for _, l := range lines {
 		if strings.TrimSpace(l.Text) == "" {
 			continue
 		}
-		inSB := l.X+l.Width/2 < sidebarRightPx
-		inTab := l.Y < 200
-		rows = append(rows, entry{l, inSB, inTab})
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		if l.Y < 240 {
+			continue
+		}
+		if l.X < textColMinPx {
+			continue
+		}
+		rows = append(rows, l)
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].line.Y < rows[j].line.Y })
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Y == rows[j].Y {
+			return rows[i].X < rows[j].X
+		}
+		return rows[i].Y < rows[j].Y
+	})
+	rows = mergeWrappedContinuations(rows)
 
 	skip := map[string]bool{
 		"People": true, "Devices": true, "Items": true,
@@ -191,38 +204,60 @@ func ParsePeople(lines []TextLine, sidebarRightPx int) []Person {
 
 	var people []Person
 	var current *Person
-	for _, e := range rows {
-		if !e.inSB || e.inTab {
-			continue
-		}
-		txt := strings.TrimSpace(e.line.Text)
+	for _, l := range rows {
+		txt := strings.TrimSpace(l.Text)
 		if skip[txt] {
 			continue
 		}
-		if current == nil {
+		if isDistance(txt) {
+			if current != nil {
+				current.Distance = txt
+			}
+			continue
+		}
+		if current == nil || current.Location != "" {
 			people = append(people, Person{Name: txt})
 			current = &people[len(people)-1]
 			continue
 		}
-		// Distance like "1,727 mi" sits to the right of the row top.
-		// Heuristic: contains " mi" or " km" or " ft" or starts with digit and short.
-		if isDistance(txt) {
-			current.Distance = txt
-			continue
-		}
-		// Location/staleness goes underneath the name. If the name has just
-		// been added, this is its detail line.
-		if current.Location == "" {
-			loc, stale := splitLocationStaleness(txt)
-			current.Location = loc
-			current.Staleness = stale
-			continue
-		}
-		// Anything past the detail line is the next person's name.
-		people = append(people, Person{Name: txt})
-		current = &people[len(people)-1]
+		loc, stale := splitLocationStaleness(txt)
+		current.Location = loc
+		current.Staleness = stale
 	}
 	return people
+}
+
+// mergeWrappedContinuations folds OCR lines that Vision split across two
+// visual rows because of a long "City, ST • 2 min. ago" string. The
+// telltale: the previous row contains the " • " separator and the next row
+// is within ~35px below it and looks like a relative-time suffix.
+func mergeWrappedContinuations(rows []TextLine) []TextLine {
+	out := make([]TextLine, 0, len(rows))
+	for _, l := range rows {
+		if n := len(out); n > 0 {
+			prev := &out[n-1]
+			gap := l.Y - (prev.Y + prev.Height)
+			if gap < 12 && strings.Contains(prev.Text, "•") && looksLikeTimeSuffix(l.Text) {
+				prev.Text = prev.Text + " " + strings.TrimSpace(l.Text)
+				if l.Y+l.Height > prev.Y+prev.Height {
+					prev.Height = (l.Y + l.Height) - prev.Y
+				}
+				continue
+			}
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+func looksLikeTimeSuffix(s string) bool {
+	t := strings.ToLower(strings.TrimSpace(s))
+	for _, suffix := range []string{"min. ago", "min ago", "hr. ago", "hr ago", "sec. ago", "sec ago", "day ago", "days ago", "week ago", "weeks ago", "month ago", "months ago", "year ago", "years ago", "ago"} {
+		if t == suffix || strings.HasSuffix(t, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func isDistance(s string) bool {

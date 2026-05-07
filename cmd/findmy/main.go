@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/oshahine/findmy-cli/internal/findmy"
 )
@@ -48,13 +47,25 @@ type runOpts struct {
 	keep bool
 }
 
+// parseOpts splits args into known flags and positional args. Go's flag
+// package stops at the first non-flag, but `findmy person Omar Shahine
+// --json` puts the flag after positional args, so we pre-extract flags
+// from anywhere in the slice.
 func parseOpts(args []string) (runOpts, []string) {
 	var o runOpts
-	fs := flag.NewFlagSet("findmy", flag.ExitOnError)
-	fs.BoolVar(&o.json, "json", false, "")
-	fs.BoolVar(&o.keep, "keep", false, "")
-	_ = fs.Parse(args)
-	return o, fs.Args()
+	var positional []string
+	for _, a := range args {
+		switch a {
+		case "--json", "-json":
+			o.json = true
+		case "--keep", "-keep":
+			o.keep = true
+		default:
+			positional = append(positional, a)
+		}
+	}
+	_ = flag.CommandLine
+	return o, positional
 }
 
 func tmpDir() string {
@@ -75,8 +86,8 @@ func runPeople(args []string) {
 	lines, err := findmy.OCR(shot)
 	must(err)
 
-	sidebarRightPx := pixelSidebarBoundary(w)
-	people := findmy.ParsePeople(lines, sidebarRightPx)
+	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
 
 	if opts.json {
 		emitJSON(people)
@@ -102,123 +113,72 @@ func runPeople(args []string) {
 func runPerson(args []string) {
 	opts, rest := parseOpts(args)
 	if len(rest) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: findmy person <name>")
+		fmt.Fprintln(os.Stderr, "usage: findmy person <name> [--json] [--zoom]")
 		os.Exit(2)
 	}
 	target := strings.ToLower(strings.Join(rest, " "))
 
 	w, err := findmy.PreparePeople()
 	must(err)
-	listShot := filepath.Join(tmpDir(), "people.png")
-	must(findmy.Capture(w, listShot))
-	defer cleanup(listShot, opts.keep)
+	shot := filepath.Join(tmpDir(), "people.png")
+	must(findmy.Capture(w, shot))
+	defer cleanup(shot, opts.keep)
 
-	lines, err := findmy.OCR(listShot)
+	lines, err := findmy.OCR(shot)
 	must(err)
 
-	var hit *findmy.TextLine
-	for i := range lines {
-		l := lines[i]
-		if strings.ToLower(strings.TrimSpace(l.Text)) == target {
-			hit = &lines[i]
+	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
+
+	var match *findmy.Person
+	for i := range people {
+		if strings.EqualFold(strings.TrimSpace(people[i].Name), target) {
+			match = &people[i]
 			break
 		}
 	}
-	if hit == nil {
-		for i := range lines {
-			l := lines[i]
-			if strings.Contains(strings.ToLower(l.Text), target) {
-				hit = &lines[i]
+	if match == nil {
+		for i := range people {
+			if strings.Contains(strings.ToLower(people[i].Name), target) {
+				match = &people[i]
 				break
 			}
 		}
 	}
-	if hit == nil {
+	if match == nil {
 		fmt.Fprintf(os.Stderr, "no person matching %q in sidebar\n", target)
 		os.Exit(1)
 	}
 
-	clickX, clickY := windowPointFromImagePoint(w, listShot, hit.X+hit.Width/2, hit.Y+hit.Height/2)
-	must(findmy.Click(clickX, clickY))
-	time.Sleep(1500 * time.Millisecond)
-
-	w2, err := findmy.MainWindow()
-	must(err)
-	detailShot := filepath.Join(tmpDir(), "person.png")
-	must(findmy.Capture(w2, detailShot))
-	defer cleanup(detailShot, opts.keep)
-
-	detailLines, err := findmy.OCR(detailShot)
-	must(err)
-
-	detail := pickDetail(detailLines, w2)
 	if opts.json {
-		emitJSON(detail)
+		emitJSON(match)
 		return
 	}
-	fmt.Printf("%s\n", detail.Name)
-	for _, l := range detail.Lines {
-		fmt.Printf("  %s\n", l)
+	fmt.Printf("%s\n  %s", match.Name, match.Location)
+	if match.Staleness != "" {
+		fmt.Printf("  (%s)", match.Staleness)
 	}
+	if match.Distance != "" {
+		fmt.Printf("  [%s]", match.Distance)
+	}
+	fmt.Println()
 }
 
-type personDetail struct {
-	Name  string   `json:"name"`
-	Lines []string `json:"lines"`
-}
 
-func pickDetail(lines []findmy.TextLine, w *findmy.Window) personDetail {
-	scaleX, _ := pixelScale(lines, w)
-	sidebarRight := int(float64(340) * scaleX)
-	sort.SliceStable(lines, func(i, j int) bool { return lines[i].Y < lines[j].Y })
-	var d personDetail
-	for _, l := range lines {
-		t := strings.TrimSpace(l.Text)
-		if t == "" {
-			continue
-		}
-		if l.X+l.Width/2 < sidebarRight {
-			continue
-		}
-		if d.Name == "" {
-			d.Name = t
-			continue
-		}
-		d.Lines = append(d.Lines, t)
-	}
-	return d
-}
-
-func pixelScale(lines []findmy.TextLine, w *findmy.Window) (float64, float64) {
-	maxX, maxY := 0, 0
-	for _, l := range lines {
-		if l.X+l.Width > maxX {
-			maxX = l.X + l.Width
-		}
-		if l.Y+l.Height > maxY {
-			maxY = l.Y + l.Height
+// pixelLayout returns the sidebar-right and name-column-left thresholds in
+// image pixels. The FindMy sidebar is ~340pt wide; the avatar column is
+// ~100pt and the text column starts at ~120pt. We multiply by the image's
+// actual pixel-per-point ratio (typically 2 on Retina, but we read the PNG
+// to be safe in case the user runs on an external non-Retina display).
+func pixelLayout(w *findmy.Window, imagePath string) (sidebarRightPx, textColMinPx int) {
+	scale := 2
+	if info, err := imageSize(imagePath); err == nil && w.Width > 0 {
+		s := info.W / w.Width
+		if s >= 1 {
+			scale = s
 		}
 	}
-	sx := 2.0
-	sy := 2.0
-	if w.Width > 0 && maxX > 0 {
-		sx = float64(maxX) / float64(w.Width)
-	}
-	if w.Height > 0 && maxY > 0 {
-		sy = float64(maxY) / float64(w.Height)
-	}
-	if sx < 0.5 || sx > 3.5 {
-		sx = 2.0
-	}
-	if sy < 0.5 || sy > 3.5 {
-		sy = 2.0
-	}
-	return sx, sy
-}
-
-func pixelSidebarBoundary(w *findmy.Window) int {
-	const sidebarPt = 340
-	return sidebarPt * 2
+	return 340 * scale, 110 * scale
 }
 
 func windowPointFromImagePoint(w *findmy.Window, imagePath string, px, py int) (int, int) {
