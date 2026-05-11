@@ -7,10 +7,9 @@ description: |
   wants a location refresh for a friend. macOS only; requires the
   display to be awake (the skill self-wakes via caffeinate) and Screen
   Recording granted to the host process.
-argument-hint: "[people | person <name>] [--json]"
 ---
 
-# /findmy — Find My Location Query
+# Find My Location Query
 
 Wraps the `findmy` CLI bundled with this plugin. The CLI drives FindMy.app:
 activates it, switches to the People tab, screencaptures the window, runs

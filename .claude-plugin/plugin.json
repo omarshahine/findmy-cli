@@ -7,6 +7,7 @@
   },
   "license": "MIT",
   "homepage": "https://github.com/omarshahine/findmy-cli",
+  "repository": "https://github.com/omarshahine/findmy-cli",
   "keywords": [
     "findmy",
     "macos",

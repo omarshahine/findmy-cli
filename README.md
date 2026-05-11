@@ -75,4 +75,24 @@ cmd/findmy/                     Go CLI
 internal/findmy/                Orchestration + sidebar parser
 helpers/findmy-helper/main.swift  window + ocr + click subcommands
 bin/                            Build outputs
+.claude-plugin/plugin.json      Claude Code / OpenClaw plugin manifest
+commands/findmy.md              /findmy slash command
+skills/findmy/SKILL.md          Auto-triggering skill
+scripts/findmy.sh               Plugin wrapper (auto-builds on first use)
 ```
+
+## Install as a plugin
+
+The repo doubles as a Claude Code / OpenClaw plugin in
+Claude-bundle format. The bundled skill and `/findmy` command both
+shell out to the same Go CLI.
+
+```bash
+# OpenClaw (linked install — edits to the repo apply live)
+openclaw plugins install --link ~/GitHub/findmy-cli
+openclaw plugins inspect openclaw-findmy
+```
+
+The wrapper script (`scripts/findmy.sh`) builds `bin/findmy` and
+`bin/findmy-helper` on first invocation via `make`. No binaries are
+committed.
