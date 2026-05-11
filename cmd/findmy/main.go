@@ -167,29 +167,28 @@ func runPerson(args []string) {
 
 // pixelLayout returns the sidebar-right and name-column-left thresholds in
 // image pixels. The FindMy sidebar is ~340pt wide; the avatar column is
-// ~100pt and the text column starts at ~120pt. We multiply by the image's
-// actual pixel-per-point ratio (typically 2 on Retina, but we read the PNG
-// to be safe in case the user runs on an external non-Retina display).
+// ~100pt with the avatar circle centered around 50pt, so an 80pt cutoff
+// drops centered avatar OCR fragments while admitting real name/location
+// text that begins around 90pt. We use a float scale because some displays
+// (e.g. a 4K dummy plug) report non-integer pixel-per-point ratios.
 func pixelLayout(w *findmy.Window, imagePath string) (sidebarRightPx, textColMinPx int) {
-	scale := 2
-	if info, err := imageSize(imagePath); err == nil && w.Width > 0 {
-		s := info.W / w.Width
-		if s >= 1 {
-			scale = s
-		}
-	}
-	return 340 * scale, 110 * scale
+	scale := imageScale(w, imagePath)
+	return int(340 * scale), int(80 * scale)
 }
 
 func windowPointFromImagePoint(w *findmy.Window, imagePath string, px, py int) (int, int) {
-	scale := 2
+	scale := imageScale(w, imagePath)
+	return w.X + int(float64(px)/scale), w.Y + int(float64(py)/scale)
+}
+
+func imageScale(w *findmy.Window, imagePath string) float64 {
+	scale := 2.0
 	if info, err := imageSize(imagePath); err == nil && w.Width > 0 {
-		scale = info.W / w.Width
-		if scale < 1 {
-			scale = 1
+		if s := float64(info.W) / float64(w.Width); s >= 1 {
+			scale = s
 		}
 	}
-	return w.X + px/scale, w.Y + py/scale
+	return scale
 }
 
 type imgInfo struct{ W, H int }

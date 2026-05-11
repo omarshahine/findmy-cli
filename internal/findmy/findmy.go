@@ -61,6 +61,51 @@ func runHelper(args ...string) ([]byte, error) {
 	return cmd.Output()
 }
 
+type Permissions struct {
+	ScreenRecording bool `json:"screenRecording"`
+	Accessibility   bool `json:"accessibility"`
+}
+
+// CheckPermissions returns nil when both Screen Recording (for screencapture)
+// and Accessibility / event-posting (for CGEvent clicks) are granted to the
+// helper binary. It uses the helper's `permissions` subcommand, which probes
+// via SCShareableContent rather than trusting CGPreflight*Access alone — TCC
+// state is often stale for CLI binaries across rebuilds, and the preflight
+// calls return false-negatives that would otherwise cause screencapture to
+// hang or click to silently no-op.
+func CheckPermissions() (Permissions, error) {
+	out, err := runHelper("permissions")
+	if err != nil {
+		return Permissions{}, fmt.Errorf("helper permissions: %w", err)
+	}
+	var p Permissions
+	if err := json.Unmarshal(out, &p); err != nil {
+		return Permissions{}, fmt.Errorf("decode permissions: %w", err)
+	}
+	return p, nil
+}
+
+func requirePermissions(needClick bool) error {
+	p, err := CheckPermissions()
+	if err != nil {
+		return err
+	}
+	var missing []string
+	if !p.ScreenRecording {
+		missing = append(missing, "Screen Recording")
+	}
+	if needClick && !p.Accessibility {
+		missing = append(missing, "Accessibility")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"missing permission(s) for the host process: %s. Grant in System Settings → Privacy & Security → %s, then fully quit and relaunch this terminal (TCC is read once at process start).",
+		strings.Join(missing, ", "), strings.Join(missing, " / "),
+	)
+}
+
 func Activate() error {
 	script := `tell application "FindMy" to activate`
 	return exec.Command("osascript", "-e", script).Run()
@@ -146,11 +191,30 @@ func Click(x, y int) error {
 	return err
 }
 
+// wakeDisplay nudges the display awake by holding a 3-second user-activity
+// assertion. Needed for headless / closed-lid use with a dummy USB-C display:
+// the dummy plug enables clamshell mode but macOS still idle-sleeps it, and
+// WindowServer stops compositing when its only display is asleep — which
+// makes `screencapture -l <windowID>` return "could not create image from
+// window". We fire-and-forget; caffeinate self-terminates after 3s, which
+// covers PreparePeople's ~2s of activate+sleep before the capture.
+func wakeDisplay() {
+	cmd := exec.Command("caffeinate", "-u", "-t", "3")
+	if err := cmd.Start(); err == nil {
+		go func() { _ = cmd.Wait() }()
+	}
+}
+
 // PreparePeople activates FindMy, raises it strictly frontmost (so the
 // People sidebar is fully painted into the bitmap captured by `screencapture
 // -l`), and selects the People tab via the View menu. Returns the window's
-// metadata for capture targeting.
+// metadata for capture targeting. Fails fast if the host process is missing
+// the Screen Recording grant, rather than letting screencapture hang.
 func PreparePeople() (*Window, error) {
+	if err := requirePermissions(false); err != nil {
+		return nil, err
+	}
+	wakeDisplay()
 	if err := Activate(); err != nil {
 		return nil, err
 	}

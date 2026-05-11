@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ScreenCaptureKit
 import Vision
 
 func die(_ msg: String, code: Int32 = 1) -> Never {
@@ -78,7 +79,9 @@ func cmdOCR(_ args: [String]) {
           let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { die("cannot load image: \(path)") }
     let req = VNRecognizeTextRequest()
     req.recognitionLevel = .accurate
-    req.usesLanguageCorrection = true
+    // Language correction mangles proper nouns ("Shahine" → "Sunshine"); names
+    // come through cleaner with it off.
+    req.usesLanguageCorrection = false
     let handler = VNImageRequestHandler(cgImage: cg)
     do { try handler.perform([req]) } catch { die("vision failed: \(error)") }
     let h = Double(cg.height), w = Double(cg.width)
@@ -112,14 +115,44 @@ func cmdClick(_ args: [String]) {
     print("{\"ok\":true}")
 }
 
+struct Permissions: Encodable {
+    let screenRecording: Bool
+    let accessibility: Bool
+}
+
+// cmdPermissions reports whether this process holds the TCC grants needed to
+// capture FindMy.app and synthesize clicks. CGPreflightScreenCaptureAccess()
+// is unreliable for CLI binaries (TCC entries can be stale across rebuilds),
+// so when it reports false we exercise the permission via SCShareableContent —
+// the only definitive probe.
+func cmdPermissions(_ args: [String]) {
+    var screenRecording = CGPreflightScreenCaptureAccess()
+    if !screenRecording {
+        let sem = DispatchSemaphore(value: 0)
+        SCShareableContent.getWithCompletionHandler { content, err in
+            screenRecording = (content != nil && err == nil)
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 3.0)
+    }
+    let accessibility: Bool
+    if #available(macOS 14.0, *) {
+        accessibility = CGPreflightPostEventAccess()
+    } else {
+        accessibility = AXIsProcessTrusted()
+    }
+    emit(Permissions(screenRecording: screenRecording, accessibility: accessibility))
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 guard let sub = args.first else {
-    die("usage: findmy-helper {window|ocr|click} ...")
+    die("usage: findmy-helper {window|ocr|click|permissions} ...")
 }
 let rest = Array(args.dropFirst())
 switch sub {
 case "window": cmdWindow(rest)
 case "ocr": cmdOCR(rest)
 case "click": cmdClick(rest)
+case "permissions": cmdPermissions(rest)
 default: die("unknown subcommand: \(sub)")
 }
