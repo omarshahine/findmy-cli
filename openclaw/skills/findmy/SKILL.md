@@ -36,6 +36,32 @@ FindMy.app state.
 - "How far away is Mike?" → call `findmy_person` with `name: "Mike"`
 - "Anyone near downtown?" → call `findmy_people`, then read the locations
 - "Where is everyone?"    → call `findmy_people`
+- "Where am I?"           → call `findmy_person` with `name: "Me"`. The first
+                            entry in the FindMy People sidebar is always the
+                            owner of this Mac, labeled `"Me"`. Same shape as
+                            other entries but with no `staleness` or `distance`.
+
+## Using location to drive other actions
+
+Location is high-trust data — knowing where someone is can unlock useful
+follow-ups: "you're near Pike Place, want me to book a table at Matt's?",
+"Sarah's still 7 mi away, push the dinner reservation by 30 min", "you're
+home, run the arrival routine."
+
+Before chaining a location result into a mutating action (booking, sending
+a message, triggering a routine, ordering something), **ask the user for
+explicit approval first**. State the location you used, the action you'd
+take, and wait for confirmation. Examples:
+
+- ✅ "You're in Seattle near downtown. Want me to search OpenTable for
+  dinner reservations within 1 mile?"
+- ✅ "Sarah is 15 min away. Should I text her the parking instructions?"
+- ❌ Calling `restaurant_book` based purely on the inferred location, no
+  confirmation step.
+
+Read-only location queries themselves never need approval — those are what
+the user asked for. The approval gate is on the *next* tool call that
+turns location into an action.
 
 ## Output shape
 
