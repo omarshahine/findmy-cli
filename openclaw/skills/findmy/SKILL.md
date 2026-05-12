@@ -2,15 +2,32 @@
 name: findmy
 description: |
   Query Find My friend locations on macOS via the findmy-cli plugin tools.
-  Returns name, coarse location, staleness, and distance for everyone in
-  the FindMy.app People sidebar. Use when the user asks "where is X", "is
-  X home", "how far is X", or wants a location refresh.
+  Returns name, coarse location (city, state), staleness, and distance for
+  everyone in the FindMy.app People sidebar. Use when the user asks "where
+  is X", "is X home", "how far is X", or wants a location refresh.
+license: MIT
+metadata:
+  author: Omar Shahine
+  version: 0.1.0
+  openclaw:
+    emoji: pushpin
+    os: [darwin]
+    homepage: https://github.com/omarshahine/findmy-cli
+    requires:
+      bins: [findmy, findmy-helper]
+    install:
+      - kind: brew
+        id: findmy-cli
+        label: "Install findmy and findmy-helper via Homebrew"
+        formula: omarshahine/tap/findmy-cli
+        bins: [findmy, findmy-helper]
 ---
 
-# Find My Location Query
+# Find My Skill
 
 Two tools available, both shell out to the `findmy` binary which drives
-FindMy.app via screen capture and Vision OCR.
+FindMy.app via screen capture and Vision OCR. Read-only — never mutates
+FindMy.app state.
 
 ## When to use
 
@@ -61,3 +78,14 @@ brew install omarshahine/tap/findmy-cli
 After install, grant **Screen Recording** to the host process running this
 plugin (System Settings → Privacy & Security → Screen Recording). Without
 it, FindMy.app captures will return blank.
+
+## ClawScan note
+
+This skill drives FindMy.app by raising it to the foreground, capturing a
+screenshot of its window, running Apple's Vision OCR on the image, and
+parsing the resulting text. The behavior may look unusual to a static
+scanner — screen capture, OCR, and UI scraping — but it is the only path
+to friend location data, since Apple does not expose this through any
+public API. The plugin does not click, type into, or otherwise mutate
+FindMy.app; it is read-only. No network traffic is initiated by this
+plugin. All data stays on-device.

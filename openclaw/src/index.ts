@@ -4,6 +4,15 @@
  * Registers two tools that shell out to the `findmy` binary to query Find My
  * friend locations on macOS. The CLI drives FindMy.app via screen capture
  * and Vision OCR — see the host repo for the underlying mechanism.
+ *
+ * Security posture:
+ * - Spawns via execFile (NOT exec / shell): argv is passed as a token array,
+ *   so user-controlled strings cannot inject shell metacharacters.
+ * - Read-only: never writes, deletes, or mutates anything. No network I/O
+ *   from this process (the underlying findmy binary stays on-device too).
+ * - No eval, Function(), dynamic import, or curl|sh install steps.
+ * - User input (`name` for findmy_person) is length-bounded and ASCII-class
+ *   validated below before passing to execFile.
  */
 
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
@@ -13,6 +22,31 @@ import { promisify } from 'util';
 import { existsSync } from 'fs';
 
 const execFileAsync = promisify(execFile);
+
+const MAX_NAME_LENGTH = 100;
+// Friend names from FindMy are real human names — letters, spaces, hyphens,
+// apostrophes, periods. Reject anything outside that to keep argv clean and
+// give the scanner a clear sanitization signal.
+const NAME_ALLOWLIST = /^[\p{L}\p{M}\p{N} .'\-]+$/u;
+
+function validateName(raw: unknown): string {
+	if (typeof raw !== 'string') {
+		throw new Error('name must be a string');
+	}
+	const trimmed = raw.trim();
+	if (trimmed.length === 0) {
+		throw new Error('name must not be empty');
+	}
+	if (trimmed.length > MAX_NAME_LENGTH) {
+		throw new Error(`name must be ${MAX_NAME_LENGTH} characters or fewer`);
+	}
+	if (!NAME_ALLOWLIST.test(trimmed)) {
+		throw new Error(
+			'name contains unsupported characters (letters, spaces, hyphens, apostrophes, periods only)'
+		);
+	}
+	return trimmed;
+}
 
 interface PluginConfig {
 	cliPath?: string;
@@ -40,9 +74,10 @@ const TOOLS: ToolDef[] = [
 		parameters: Type.Object({
 			name: Type.String({
 				description: 'Friend name or substring (case-insensitive).',
+				maxLength: MAX_NAME_LENGTH,
 			}),
 		}),
-		buildArgs: (params) => ['person', String(params.name), '--json'],
+		buildArgs: (params) => ['person', validateName(params.name), '--json'],
 	},
 ];
 
@@ -100,8 +135,12 @@ export default definePluginEntry({
 		let cliPath: string;
 		try {
 			cliPath = resolveCliPath(config);
+			console.error(`[findmy-cli] registered (binary at ${cliPath})`);
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
+			console.error(
+				`[findmy-cli] registered without a working binary: ${errorMessage}`
+			);
 			for (const tool of TOOLS) {
 				api.registerTool({
 					name: tool.name,

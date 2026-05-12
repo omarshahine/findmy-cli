@@ -12,9 +12,28 @@ The macOS APIs we need (Vision, CoreGraphics window list, CGEvent click) have no
 Go binding. We bundle a tiny Swift binary `findmy-helper` that exposes them as
 JSON-emitting subcommands, and a Go CLI `findmy` that orchestrates.
 
-## Build
+## Install
 
+### Homebrew (recommended)
+
+```bash
+brew install omarshahine/tap/findmy-cli
 ```
+
+Installs both `findmy` and `findmy-helper` to `/opt/homebrew/bin/`.
+
+### OpenClaw plugin
+
+```bash
+clawhub install findmy-cli
+```
+
+The plugin shells out to the `findmy` binary — install that via Homebrew
+first. Registers `findmy_people` and `findmy_person` tools.
+
+### Build from source
+
+```bash
 make
 ```
 
@@ -81,18 +100,16 @@ skills/findmy/SKILL.md          Auto-triggering skill
 scripts/findmy.sh               Plugin wrapper (auto-builds on first use)
 ```
 
-## Install as a plugin
+## Plugin surfaces
 
-The repo doubles as a Claude Code / OpenClaw plugin in
-Claude-bundle format. The bundled skill and `/findmy` command both
-shell out to the same Go CLI.
+The repo ships three plugin surfaces, all of which shell out to the same Go CLI:
 
-```bash
-# OpenClaw (linked install — edits to the repo apply live)
-openclaw plugins install --link ~/GitHub/findmy-cli
-openclaw plugins inspect openclaw-findmy
-```
+| Surface | Manifest | Install |
+|---|---|---|
+| OpenClaw (NPM + ClawHub) | `openclaw/openclaw.plugin.json` | `clawhub install findmy-cli` |
+| Claude Code (bundle) | `.claude-plugin/plugin.json` | `openclaw plugins install --link ~/GitHub/findmy-cli` |
+| Homebrew CLI | `Formula/findmy-cli.rb` (omarshahine/homebrew-tap) | `brew install omarshahine/tap/findmy-cli` |
 
-The wrapper script (`scripts/findmy.sh`) builds `bin/findmy` and
+The Claude Code wrapper (`scripts/findmy.sh`) builds `bin/findmy` and
 `bin/findmy-helper` on first invocation via `make`. No binaries are
 committed.

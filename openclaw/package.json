@@ -28,10 +28,12 @@
     ]
   },
   "files": [
+    "dist/",
     "src/",
     "skills/",
     "openclaw.plugin.json"
   ],
+  "main": "./dist/index.js",
   "keywords": [
     "openclaw",
     "openclaw-plugin",
@@ -71,9 +73,11 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "tsup": "^8.5.0",
     "typescript": "^5.9.3"
   },
   "scripts": {
+    "build": "tsup src/index.ts --format esm --out-dir dist --dts --clean --target node20",
     "plugin:check": "npx --yes @openclaw/plugin-inspector inspect --no-openclaw",
     "plugin:ci": "npx --yes @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute"
   }
