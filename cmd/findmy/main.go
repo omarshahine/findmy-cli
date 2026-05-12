@@ -21,6 +21,10 @@ func main() {
 		runPeople(os.Args[2:])
 	case "person":
 		runPerson(os.Args[2:])
+	case "devices":
+		runDevices(os.Args[2:])
+	case "device":
+		runDevice(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -33,8 +37,10 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `findmy — query Find My via UI scraping
 
 Usage:
-  findmy people [--json] [--keep]
-  findmy person <name> [--json] [--keep]
+  findmy people  [--json] [--keep]
+  findmy person  <name> [--json] [--keep]
+  findmy devices [--json] [--keep]
+  findmy device  <name> [--json] [--keep]
 
 Flags:
   --json   emit JSON instead of a human table
@@ -108,6 +114,102 @@ func runPeople(args []string) {
 		}
 		fmt.Println()
 	}
+}
+
+func runDevices(args []string) {
+	opts, _ := parseOpts(args)
+
+	w, err := findmy.PrepareDevices()
+	must(err)
+	shot := filepath.Join(tmpDir(), "devices.png")
+	must(findmy.Capture(w, shot))
+	defer cleanup(shot, opts.keep)
+
+	lines, err := findmy.OCR(shot)
+	must(err)
+
+	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	devices := findmy.ParseDevices(lines, sidebarRightPx, textColMinPx)
+
+	if opts.json {
+		emitJSON(devices)
+		return
+	}
+	if len(devices) == 0 {
+		fmt.Println("(no devices found)")
+		return
+	}
+	sort.SliceStable(devices, func(i, j int) bool { return devices[i].Name < devices[j].Name })
+	for _, d := range devices {
+		fmt.Printf("%s\n  %s", d.Name, d.Location)
+		if d.Staleness != "" {
+			fmt.Printf("  (%s)", d.Staleness)
+		}
+		if d.Distance != "" {
+			fmt.Printf("  [%s]", d.Distance)
+		}
+		if d.Battery != "" {
+			fmt.Printf("  {%s}", d.Battery)
+		}
+		fmt.Println()
+	}
+}
+
+func runDevice(args []string) {
+	opts, rest := parseOpts(args)
+	if len(rest) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: findmy device <name> [--json] [--keep]")
+		os.Exit(2)
+	}
+	target := strings.ToLower(strings.Join(rest, " "))
+
+	w, err := findmy.PrepareDevices()
+	must(err)
+	shot := filepath.Join(tmpDir(), "devices.png")
+	must(findmy.Capture(w, shot))
+	defer cleanup(shot, opts.keep)
+
+	lines, err := findmy.OCR(shot)
+	must(err)
+
+	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	devices := findmy.ParseDevices(lines, sidebarRightPx, textColMinPx)
+
+	var match *findmy.Device
+	for i := range devices {
+		if strings.EqualFold(strings.TrimSpace(devices[i].Name), target) {
+			match = &devices[i]
+			break
+		}
+	}
+	if match == nil {
+		for i := range devices {
+			if strings.Contains(strings.ToLower(devices[i].Name), target) {
+				match = &devices[i]
+				break
+			}
+		}
+	}
+	if match == nil {
+		fmt.Fprintf(os.Stderr, "no device matching %q in sidebar\n", target)
+		os.Exit(1)
+	}
+
+	if opts.json {
+		emitJSON(match)
+		return
+	}
+	fmt.Printf("%s\n  %s", match.Name, match.Location)
+	if match.Staleness != "" {
+		fmt.Printf("  (%s)", match.Staleness)
+	}
+	if match.Distance != "" {
+		fmt.Printf("  [%s]", match.Distance)
+	}
+	if match.Battery != "" {
+		fmt.Printf("  {%s}", match.Battery)
+	}
+	fmt.Println()
 }
 
 func runPerson(args []string) {

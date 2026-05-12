@@ -39,6 +39,14 @@ type Person struct {
 	Distance  string `json:"distance,omitempty"`
 }
 
+type Device struct {
+	Name      string `json:"name"`
+	Location  string `json:"location,omitempty"`
+	Staleness string `json:"staleness,omitempty"`
+	Distance  string `json:"distance,omitempty"`
+	Battery   string `json:"battery,omitempty"`
+}
+
 func helper() string {
 	if env := os.Getenv("FINDMY_HELPER"); env != "" {
 		return env
@@ -211,6 +219,18 @@ func wakeDisplay() {
 // metadata for capture targeting. Fails fast if the host process is missing
 // the Screen Recording grant, rather than letting screencapture hang.
 func PreparePeople() (*Window, error) {
+	return prepareTab("People")
+}
+
+// PrepareDevices is the Devices-tab mirror of PreparePeople. Demitri's own
+// Apple devices (iPhone, iPad, Mac, AirPods, Apple Watch) live in this tab,
+// which the People tab cannot see — so this is the path for "where is my
+// phone" / "where are my AirPods" queries on his own iCloud.
+func PrepareDevices() (*Window, error) {
+	return prepareTab("Devices")
+}
+
+func prepareTab(tab string) (*Window, error) {
 	if err := requirePermissions(false); err != nil {
 		return nil, err
 	}
@@ -221,7 +241,7 @@ func PreparePeople() (*Window, error) {
 	time.Sleep(900 * time.Millisecond)
 	frontScript := `tell application "System Events" to tell process "FindMy" to set frontmost to true`
 	_ = exec.Command("osascript", "-e", frontScript).Run()
-	_ = SwitchTab("People")
+	_ = SwitchTab(tab)
 	time.Sleep(1100 * time.Millisecond)
 	return MainWindow()
 }
@@ -339,4 +359,91 @@ func splitLocationStaleness(s string) (location, staleness string) {
 		return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+len("•"):])
 	}
 	return s, ""
+}
+
+// ParseDevices groups OCR lines from the Devices sidebar into Device records.
+// Layout mirrors People (avatar/icon column on left, text band middle, distance
+// right) but rows can also carry a battery indicator OCR'd as "82%" or similar.
+// Battery percentages are extracted into the Battery field; everything else
+// follows the same row-walk logic as ParsePeople.
+func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
+	rows := make([]TextLine, 0, len(lines))
+	for _, l := range lines {
+		if strings.TrimSpace(l.Text) == "" {
+			continue
+		}
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		if l.Y < 240 {
+			continue
+		}
+		if l.X < textColMinPx {
+			continue
+		}
+		rows = append(rows, l)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Y == rows[j].Y {
+			return rows[i].X < rows[j].X
+		}
+		return rows[i].Y < rows[j].Y
+	})
+	rows = mergeWrappedContinuations(rows)
+
+	skip := map[string]bool{
+		"People": true, "Devices": true, "Items": true,
+		"FaceTime": true, "Search": true, "+": true, "3D": true, "N": true,
+	}
+
+	var devices []Device
+	var current *Device
+	for _, l := range rows {
+		txt := strings.TrimSpace(l.Text)
+		if skip[txt] {
+			continue
+		}
+		if isDistance(txt) {
+			if current != nil {
+				current.Distance = txt
+			}
+			continue
+		}
+		if isBattery(txt) {
+			if current != nil {
+				current.Battery = txt
+			}
+			continue
+		}
+		if current == nil || current.Location != "" {
+			devices = append(devices, Device{Name: txt})
+			current = &devices[len(devices)-1]
+			continue
+		}
+		loc, stale := splitLocationStaleness(txt)
+		current.Location = loc
+		current.Staleness = stale
+	}
+	return devices
+}
+
+// isBattery recognizes FindMy.app's battery-indicator OCR fragments. The
+// Devices tab renders a battery glyph followed by a percentage like "82%";
+// Vision usually picks up just "82%" or "82 %". A bare "Offline" or "No
+// location" is left to fall through and become the device's Status row.
+func isBattery(s string) bool {
+	t := strings.TrimSpace(strings.ReplaceAll(s, " ", ""))
+	if !strings.HasSuffix(t, "%") {
+		return false
+	}
+	num := strings.TrimSuffix(t, "%")
+	if num == "" {
+		return false
+	}
+	for _, r := range num {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
