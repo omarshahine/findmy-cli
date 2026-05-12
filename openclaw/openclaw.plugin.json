@@ -2,7 +2,7 @@
   "id": "findmy-cli",
   "name": "Find My",
   "description": "macOS-only. Query Find My friend locations by driving FindMy.app via screen capture and Vision OCR. Returns name, coarse location (city, state), staleness, and distance. Shells out to the `findmy` binary (install via `brew install omarshahine/tap/findmy-cli`). Requires Screen Recording permission granted to the host process.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "platforms": [
     "darwin"
   ],
