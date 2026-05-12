@@ -14,24 +14,38 @@ JSON-emitting subcommands, and a Go CLI `findmy` that orchestrates.
 
 ## Install
 
-### Homebrew (recommended)
+Pick the channel that matches how you'll use it:
+
+| Goal | Channel | Command |
+|---|---|---|
+| Use `findmy` CLI from terminal | Homebrew | `brew install omarshahine/tap/findmy-cli` |
+| Use as OpenClaw plugin (chat tools) | ClawHub | `clawhub install findmy-cli` |
+| Use as Claude Code plugin | OpenClaw | `openclaw plugins install --link ~/GitHub/findmy-cli` |
+| Use as a Node library | NPM | `npm install findmy-cli` |
+| Hack on the code | Source | `git clone … && make` |
+
+### Homebrew (CLI)
 
 ```bash
 brew install omarshahine/tap/findmy-cli
 ```
 
-Installs both `findmy` and `findmy-helper` to `/opt/homebrew/bin/`.
+Installs `findmy` and `findmy-helper` to `/opt/homebrew/bin/`. macOS only.
+Tap source: [omarshahine/homebrew-tap](https://github.com/omarshahine/homebrew-tap).
+First run will prompt for **Screen Recording** permission.
 
-### OpenClaw plugin
+### ClawHub (OpenClaw plugin)
 
 ```bash
 clawhub install findmy-cli
 ```
 
-The plugin shells out to the `findmy` binary — install that via Homebrew
-first. Registers `findmy_people` and `findmy_person` tools.
+Registers `findmy_people` and `findmy_person` as OpenClaw tools. Shells out
+to the `findmy` binary — install that via Homebrew first.
+Listing: [`clawhub.com/p/findmy-cli`](https://clawhub.com/p/findmy-cli) ·
+NPM package: [`findmy-cli`](https://www.npmjs.com/package/findmy-cli).
 
-### Build from source
+### Source build
 
 ```bash
 make
@@ -102,13 +116,18 @@ scripts/findmy.sh               Plugin wrapper (auto-builds on first use)
 
 ## Plugin surfaces
 
-The repo ships three plugin surfaces, all of which shell out to the same Go CLI:
+All four distribution channels in one repo:
 
-| Surface | Manifest | Install |
+| Surface | Source of truth | Auto-published |
 |---|---|---|
-| OpenClaw (NPM + ClawHub) | `openclaw/openclaw.plugin.json` | `clawhub install findmy-cli` |
-| Claude Code (bundle) | `.claude-plugin/plugin.json` | `openclaw plugins install --link ~/GitHub/findmy-cli` |
-| Homebrew CLI | `Formula/findmy-cli.rb` (omarshahine/homebrew-tap) | `brew install omarshahine/tap/findmy-cli` |
+| Homebrew formula | [`omarshahine/homebrew-tap`](https://github.com/omarshahine/homebrew-tap) `Formula/findmy-cli.rb` | manual on tag |
+| NPM package | `openclaw/package.json` | GH Actions on tag push |
+| ClawHub package | same as NPM, source-linked to commit | GH Actions on tag push |
+| Claude Code plugin | `.claude-plugin/plugin.json` (bundle format) | manual linked install |
+
+CI workflows under `.github/workflows/` handle NPM and ClawHub on every
+`v*` tag push (OIDC trusted publishing for NPM, `CLAWHUB_TOKEN` for
+ClawHub). Homebrew formula bump is still manual.
 
 The Claude Code wrapper (`scripts/findmy.sh`) builds `bin/findmy` and
 `bin/findmy-helper` on first invocation via `make`. No binaries are
