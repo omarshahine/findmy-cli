@@ -82,15 +82,62 @@ Settings → Privacy & Security → Screen Recording / Accessibility.
 After granting, **fully quit and relaunch the host process** — TCC is read once
 at process start.
 
+## Running on a headless Mac
+
+FindMy.app needs WindowServer compositing to render its window. WindowServer
+only runs when macOS sees a display, so a Mac mini / Studio / Pro with nothing
+plugged into HDMI or USB-C will return a 99 KB all-black PNG every time you
+call `screencapture`, even though the process itself runs fine.
+
+To make findmy work headless:
+
+1. **Plug in a dummy display.** A 4K HDMI/USB-C "headless adapter" (~$10 on
+   Amazon, search "4K HDMI dummy plug" or "USB-C dummy display"). macOS sees
+   it as a real 4K@60Hz monitor and starts WindowServer normally.
+
+2. **Disable display sleep** so WindowServer stays compositing:
+
+   ```bash
+   sudo pmset -a displaysleep 0
+   sudo pmset -a sleep 0          # optional: also disable system sleep
+   ```
+
+   Or, for a per-session keep-awake without changing global power settings:
+
+   ```bash
+   caffeinate -d &
+   ```
+
+   Run `caffeinate` as a LaunchAgent if you want it to start at login.
+
+3. **Verify WindowServer can see FindMy.app:**
+
+   ```bash
+   open -a FindMy
+   findmy-helper window --owner FindMy
+   ```
+
+   Should return JSON with non-zero `width`/`height` and `onScreen: true`. If
+   `width`/`height` are 0 or the array is empty, WindowServer isn't
+   compositing — re-check display sleep and that the dummy plug is seated.
+
+4. **Grant Screen Recording to the host process** that will call `findmy`
+   (your SSH session's shell, the LaunchAgent, the OpenClaw gateway, etc.).
+   TCC is per-binary path; the brew-installed `/opt/homebrew/bin/findmy-helper`
+   is what needs the grant.
+
+If you're hitting black screenshots even with a dummy plug, the CLI's
+`findmy-helper permissions` output (`screenRecording: false`) is the
+diagnostic — TCC denied is more common than missing display.
+
 ## Limitations
 
 - **The display must be awake and unlocked.** WindowServer stops compositing
-  when the display sleeps, so `screencapture` returns a 99 KB all-black PNG
-  even when the process itself runs fine. The CLI detects this and tells you
-  to wake the keyboard. There is no software-only path to wake a sleeping
-  display from userland — Apple gates `IODisplayWranglerWakeup` behind real
-  HID hardware. For headless use, run `caffeinate -d` as a LaunchAgent or
-  `pmset -a displaysleep 0`.
+  when the display sleeps, so `screencapture` returns a 99 KB all-black PNG.
+  The CLI detects this and tells you to wake the keyboard. There is no
+  software-only path to wake a sleeping display from userland — Apple gates
+  `IODisplayWranglerWakeup` behind real HID hardware. See [Running on a
+  headless Mac](#running-on-a-headless-mac) above for the dummy-plug fix.
 - The MapKit map area does not always render into the captured bitmap (Catalyst
   quirk). This tool only reads the sidebar and detail pane text; map pins are
   not extracted.
