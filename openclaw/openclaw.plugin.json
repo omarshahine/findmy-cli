@@ -1,0 +1,36 @@
+{
+  "id": "findmy-cli",
+  "name": "Find My",
+  "description": "macOS-only. Query Find My friend locations by driving FindMy.app via screen capture and Vision OCR. Returns name, coarse location (city, state), staleness, and distance. Shells out to the `findmy` binary (install via `brew install omarshahine/tap/findmy-cli`). Requires Screen Recording permission granted to the host process.",
+  "version": "0.1.0",
+  "platforms": [
+    "darwin"
+  ],
+  "requires": {
+    "binaries": [
+      "findmy",
+      "findmy-helper"
+    ],
+    "osPermissions": [
+      "macos:screen-recording"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "cliPath": {
+        "type": "string",
+        "description": "Path to the findmy binary. Defaults to PATH lookup.",
+        "default": "findmy"
+      }
+    },
+    "additionalProperties": false
+  },
+  "uiHints": {
+    "cliPath": {
+      "label": "CLI Path",
+      "help": "Path or command name for the findmy binary. Defaults to finding it on PATH (typically /opt/homebrew/bin/findmy after `brew install omarshahine/tap/findmy-cli`).",
+      "placeholder": "findmy"
+    }
+  }
+}

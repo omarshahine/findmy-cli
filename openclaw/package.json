@@ -1,0 +1,80 @@
+{
+  "name": "findmy-cli",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin for macOS Find My friend locations. Shells out to the findmy CLI to drive FindMy.app via screen capture and Vision OCR. macOS-only. Install findmy first via `brew install omarshahine/tap/findmy-cli`.",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.3.23"
+    },
+    "build": {
+      "openclawVersion": "2026.4.15"
+    },
+    "environment": {
+      "binaries": [
+        "findmy",
+        "findmy-helper"
+      ],
+      "osPermissions": [
+        "macos:screen-recording"
+      ]
+    },
+    "hostTargets": [
+      "darwin-arm64",
+      "darwin-x64"
+    ]
+  },
+  "files": [
+    "src/",
+    "skills/",
+    "openclaw.plugin.json"
+  ],
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "findmy",
+    "location",
+    "macos",
+    "ocr",
+    "vision",
+    "screen-scraping"
+  ],
+  "author": {
+    "name": "Omar Shahine",
+    "email": "omar@shahine.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/omarshahine/findmy-cli.git",
+    "directory": "openclaw"
+  },
+  "homepage": "https://github.com/omarshahine/findmy-cli#readme",
+  "bugs": {
+    "url": "https://github.com/omarshahine/findmy-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "darwin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.49",
+    "openclaw": "^2026.3.23"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "plugin:check": "npx --yes @openclaw/plugin-inspector inspect --no-openclaw",
+    "plugin:ci": "npx --yes @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute"
+  }
+}

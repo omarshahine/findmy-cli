@@ -1,0 +1,46 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish findmy-cli to NPM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        # Node 24 ships with npm 11.x. Trusted Publisher OIDC requires
+        # npm >= 11.5.1 (per https://docs.npmjs.com/trusted-publishers).
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Print npm version
+        run: npm --version
+
+      - name: Assert tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+        working-directory: openclaw
+
+      - name: Publish to NPM (OIDC trusted publishing)
+        run: npm publish --provenance --access public
+        working-directory: openclaw
+
+      - name: Verify
+        run: npm view findmy-cli version
