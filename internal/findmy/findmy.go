@@ -238,14 +238,16 @@ func PreparePeople() (*Window, error) {
 // person names), then walk the remaining lines top-to-bottom.
 func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 	rows := make([]TextLine, 0, len(lines))
+	effectiveSidebarRightPx := detectSidebarRight(lines, sidebarRightPx)
+	rowStartY := detectPeopleRowStartY(lines, effectiveSidebarRightPx)
 	for _, l := range lines {
 		if strings.TrimSpace(l.Text) == "" {
 			continue
 		}
-		if l.X+l.Width/2 >= sidebarRightPx {
+		if l.X+l.Width/2 >= effectiveSidebarRightPx {
 			continue
 		}
-		if l.Y < 240 {
+		if l.Y < rowStartY {
 			continue
 		}
 		if l.X < textColMinPx {
@@ -266,7 +268,7 @@ func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 		"FaceTime": true, "Search": true, "+": true, "3D": true, "N": true,
 	}
 
-	var people []Person
+	people := make([]Person, 0)
 	var current *Person
 	for _, l := range rows {
 		txt := strings.TrimSpace(l.Text)
@@ -295,6 +297,57 @@ func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 // visual rows because of a long "City, ST • 2 min. ago" string. The
 // telltale: the previous row contains the " • " separator and the next row
 // is within ~35px below it and looks like a relative-time suffix.
+func detectSidebarRight(lines []TextLine, fallbackRightPx int) int {
+	maxTabRight := 0
+	for _, l := range lines {
+		txt := strings.TrimSpace(l.Text)
+		if txt != "People" && txt != "Devices" && txt != "Items" {
+			continue
+		}
+		if l.Y > 220 {
+			continue
+		}
+		if r := l.X + l.Width; r > maxTabRight {
+			maxTabRight = r
+		}
+	}
+	if maxTabRight == 0 {
+		return fallbackRightPx
+	}
+	// The segmented People/Devices/Items control sits inside the sidebar.
+	// Its right edge is a better observed boundary than a fixed scaled point
+	// width on compact Catalyst layouts where map labels start near x≈350px.
+	observed := maxTabRight + 40
+	if observed < fallbackRightPx {
+		return observed
+	}
+	return fallbackRightPx
+}
+
+func detectPeopleRowStartY(lines []TextLine, sidebarRightPx int) int {
+	const fallbackY = 120
+	bottom := 0
+	for _, l := range lines {
+		txt := strings.TrimSpace(l.Text)
+		if txt != "People" && txt != "Devices" && txt != "Items" {
+			continue
+		}
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		if l.Y > 220 {
+			continue
+		}
+		if b := l.Y + l.Height; b > bottom {
+			bottom = b
+		}
+	}
+	if bottom == 0 {
+		return fallbackY
+	}
+	return bottom + 12
+}
+
 func mergeWrappedContinuations(rows []TextLine) []TextLine {
 	out := make([]TextLine, 0, len(rows))
 	for _, l := range rows {
