@@ -120,15 +120,17 @@ func Activate() error {
 }
 
 func SwitchTab(name string) error {
+	ls := GetAppStrings()
 	script := fmt.Sprintf(
-		`tell application "System Events" to tell process "FindMy" to click menu item %q of menu "View" of menu bar 1`,
-		name,
+		`tell application "System Events" to tell process "FindMy" to click menu item %q of menu %q of menu bar 1`,
+		name, ls.ViewMenu,
 	)
 	return exec.Command("osascript", "-e", script).Run()
 }
 
 func MainWindow() (*Window, error) {
-	out, err := runHelper("window", "--owner", "Find My")
+	ls := GetAppStrings()
+	out, err := runHelper("window", "--owner", ls.WindowOwner)
 	if err != nil {
 		return nil, fmt.Errorf("helper window: %w", err)
 	}
@@ -141,7 +143,7 @@ func MainWindow() (*Window, error) {
 			return &w, nil
 		}
 	}
-	return nil, fmt.Errorf("no visible FindMy window (open the app first)")
+	return nil, fmt.Errorf("no visible %s window (open the app first)", ls.WindowOwner)
 }
 
 // Capture writes the FindMy window's content to dest using `screencapture -l`,
@@ -219,7 +221,7 @@ func wakeDisplay() {
 // metadata for capture targeting. Fails fast if the host process is missing
 // the Screen Recording grant, rather than letting screencapture hang.
 func PreparePeople() (*Window, error) {
-	return prepareTab("People")
+	return prepareTab(GetAppStrings().PeopleTab)
 }
 
 // PrepareDevices is the Devices-tab mirror of PreparePeople. Demitri's own
@@ -227,7 +229,7 @@ func PreparePeople() (*Window, error) {
 // which the People tab cannot see — so this is the path for "where is my
 // phone" / "where are my AirPods" queries on his own iCloud.
 func PrepareDevices() (*Window, error) {
-	return prepareTab("Devices")
+	return prepareTab(GetAppStrings().DevicesTab)
 }
 
 func prepareTab(tab string) (*Window, error) {
@@ -257,7 +259,8 @@ func RequireSidebarVisible(lines []TextLine, sidebarRightPx int, tabName string)
 	seenOtherTab := false
 	for _, l := range lines {
 		txt := strings.TrimSpace(l.Text)
-		if txt != "People" && txt != "Devices" && txt != "Items" {
+		isPeople, isTab := sidebarTabText(txt)
+		if !isTab {
 			continue
 		}
 		if l.Y > 220 {
@@ -266,7 +269,7 @@ func RequireSidebarVisible(lines []TextLine, sidebarRightPx int, tabName string)
 		if l.X+l.Width/2 >= sidebarRightPx {
 			continue
 		}
-		if txt == "People" {
+		if isPeople {
 			seenPeople = true
 		} else {
 			seenOtherTab = true
@@ -320,10 +323,7 @@ func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 	})
 	rows = mergeWrappedContinuations(rows)
 
-	skip := map[string]bool{
-		"People": true, "Devices": true, "Items": true,
-		"FaceTime": true, "Search": true, "+": true, "3D": true, "N": true,
-	}
+	skip := GetAppStrings().SkipWords()
 
 	people := make([]Person, 0)
 	var current *Person
@@ -359,7 +359,7 @@ func detectSidebarRight(lines []TextLine, fallbackRightPx int) int {
 	maxTabRight := 0
 	for _, l := range lines {
 		txt := strings.TrimSpace(l.Text)
-		if txt != "People" && txt != "Devices" && txt != "Items" {
+		if _, isTab := sidebarTabText(txt); !isTab {
 			continue
 		}
 		if l.Y > 220 {
@@ -389,7 +389,7 @@ func detectSidebarRowStartY(lines []TextLine, sidebarRightPx int) int {
 	bottom := 0
 	for _, l := range lines {
 		txt := strings.TrimSpace(l.Text)
-		if txt != "People" && txt != "Devices" && txt != "Items" {
+		if _, isTab := sidebarTabText(txt); !isTab {
 			continue
 		}
 		if l.X+l.Width/2 >= sidebarRightPx {
@@ -406,6 +406,18 @@ func detectSidebarRowStartY(lines []TextLine, sidebarRightPx int) int {
 		return fallbackY
 	}
 	return bottom + 12
+}
+
+func sidebarTabText(txt string) (isPeople, isTab bool) {
+	ls := GetAppStrings()
+	switch txt {
+	case "People", ls.PeopleTab:
+		return true, true
+	case "Devices", "Items", ls.DevicesTab, ls.ItemsTab:
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // mergeWrappedContinuations folds OCR lines that Vision split across two
@@ -433,8 +445,8 @@ func mergeWrappedContinuations(rows []TextLine) []TextLine {
 
 func looksLikeTimeSuffix(s string) bool {
 	t := strings.ToLower(strings.TrimSpace(s))
-	for _, suffix := range []string{"min. ago", "min ago", "hr. ago", "hr ago", "sec. ago", "sec ago", "day ago", "days ago", "week ago", "weeks ago", "month ago", "months ago", "year ago", "years ago", "ago"} {
-		if t == suffix || strings.HasSuffix(t, suffix) {
+	for _, pattern := range GetAppStrings().TimeSuffixes {
+		if t == pattern || strings.HasSuffix(t, pattern) || strings.Contains(t, pattern) {
 			return true
 		}
 	}
@@ -490,10 +502,7 @@ func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
 	})
 	rows = mergeWrappedContinuations(rows)
 
-	skip := map[string]bool{
-		"People": true, "Devices": true, "Items": true,
-		"FaceTime": true, "Search": true, "+": true, "3D": true, "N": true,
-	}
+	skip := GetAppStrings().SkipWords()
 
 	devices := make([]Device, 0)
 	var current *Device
