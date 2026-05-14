@@ -236,6 +236,29 @@ func PreparePeople() (*Window, error) {
 // We discard the avatar band entirely (it produces low-confidence fragments
 // like "Is" or "rk" from initials and shadows that otherwise get misread as
 // person names), then walk the remaining lines top-to-bottom.
+func PeopleSidebarVisible(lines []TextLine, sidebarRightPx int) bool {
+	seenPeople := false
+	seenOtherTab := false
+	for _, l := range lines {
+		txt := strings.TrimSpace(l.Text)
+		if txt != "People" && txt != "Devices" && txt != "Items" {
+			continue
+		}
+		if l.Y > 220 {
+			continue
+		}
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		if txt == "People" {
+			seenPeople = true
+		} else {
+			seenOtherTab = true
+		}
+	}
+	return seenPeople && seenOtherTab
+}
+
 func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 	rows := make([]TextLine, 0, len(lines))
 	effectiveSidebarRightPx := detectSidebarRight(lines, sidebarRightPx)
