@@ -88,7 +88,7 @@ func runPeople(args []string) {
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
 	if !findmy.PeopleSidebarVisible(lines, sidebarRightPx) {
-		fmt.Fprintln(os.Stderr, "error: Find My People sidebar is not visible; open the sidebar/People tab and re-run")
+		fmt.Fprintln(os.Stderr, "Find My People sidebar is not visible. Open the sidebar, select People, then re-run findmy.")
 		os.Exit(1)
 	}
 	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
@@ -133,7 +133,7 @@ func runPerson(args []string) {
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
 	if !findmy.PeopleSidebarVisible(lines, sidebarRightPx) {
-		fmt.Fprintln(os.Stderr, "error: Find My People sidebar is not visible; open the sidebar/People tab and re-run")
+		fmt.Fprintln(os.Stderr, "Find My People sidebar is not visible. Open the sidebar, select People, then re-run findmy.")
 		os.Exit(1)
 	}
 	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
