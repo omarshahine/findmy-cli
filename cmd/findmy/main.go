@@ -87,6 +87,7 @@ func runPeople(args []string) {
 	must(err)
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx))
 	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
 
 	if opts.json {
@@ -128,6 +129,7 @@ func runPerson(args []string) {
 	must(err)
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx))
 	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
 
 	var match *findmy.Person
@@ -163,7 +165,6 @@ func runPerson(args []string) {
 	}
 	fmt.Println()
 }
-
 
 // pixelLayout returns the sidebar-right and name-column-left thresholds in
 // image pixels. The FindMy sidebar is ~340pt wide; the avatar column is
