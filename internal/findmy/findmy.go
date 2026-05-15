@@ -246,6 +246,38 @@ func prepareTab(tab string) (*Window, error) {
 	return MainWindow()
 }
 
+// RequireSidebarVisible returns an error when the People/Devices/Items
+// segmented control is missing from the OCR output, which happens when the
+// user has hidden the sidebar (View → Hide Sidebar, or the toggle button).
+// Without this gate ParsePeople sees only map content and yields nonsense
+// "people" rows pulled from map labels (place names, road names) rather
+// than friend names.
+func RequireSidebarVisible(lines []TextLine, sidebarRightPx int) error {
+	seenPeople := false
+	seenOtherTab := false
+	for _, l := range lines {
+		txt := strings.TrimSpace(l.Text)
+		if txt != "People" && txt != "Devices" && txt != "Items" {
+			continue
+		}
+		if l.Y > 220 {
+			continue
+		}
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		if txt == "People" {
+			seenPeople = true
+		} else {
+			seenOtherTab = true
+		}
+	}
+	if seenPeople && seenOtherTab {
+		return nil
+	}
+	return fmt.Errorf("Find My People sidebar is not visible. Open the sidebar, select People, then re-run findmy")
+}
+
 // ParsePeople groups OCR lines from the People sidebar into Person records.
 // The sidebar layout (in image pixels) has three bands:
 //
@@ -255,17 +287,24 @@ func prepareTab(tab string) (*Window, error) {
 //
 // We discard the avatar band entirely (it produces low-confidence fragments
 // like "Is" or "rk" from initials and shadows that otherwise get misread as
-// person names), then walk the remaining lines top-to-bottom.
+// person names), then walk the remaining lines top-to-bottom. The sidebar's
+// right edge and the y-cutoff for the first row are derived from the OCR'd
+// People/Devices/Items tab-pill positions (see detectSidebarRight,
+// detectPeopleRowStartY) rather than fixed at scaled-point constants — the
+// dynamic bounds handle compact Catalyst layouts where map labels would
+// otherwise bleed into the fixed cutoff.
 func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 	rows := make([]TextLine, 0, len(lines))
+	effectiveSidebarRightPx := detectSidebarRight(lines, sidebarRightPx)
+	rowStartY := detectPeopleRowStartY(lines, effectiveSidebarRightPx)
 	for _, l := range lines {
 		if strings.TrimSpace(l.Text) == "" {
 			continue
 		}
-		if l.X+l.Width/2 >= sidebarRightPx {
+		if l.X+l.Width/2 >= effectiveSidebarRightPx {
 			continue
 		}
-		if l.Y < 240 {
+		if l.Y < rowStartY {
 			continue
 		}
 		if l.X < textColMinPx {
@@ -286,7 +325,7 @@ func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 		"FaceTime": true, "Search": true, "+": true, "3D": true, "N": true,
 	}
 
-	var people []Person
+	people := make([]Person, 0)
 	var current *Person
 	for _, l := range rows {
 		txt := strings.TrimSpace(l.Text)
@@ -309,6 +348,64 @@ func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 		current.Staleness = stale
 	}
 	return people
+}
+
+// detectSidebarRight returns the narrower of (the observed right edge of
+// the People/Devices/Items segmented control + 40px padding) and the
+// scaled-point fallback, so that on compact Catalyst layouts the cutoff
+// shrinks to exclude map labels that start near x≈350px. Returns the
+// fallback unchanged when no tab pill is OCR'd.
+func detectSidebarRight(lines []TextLine, fallbackRightPx int) int {
+	maxTabRight := 0
+	for _, l := range lines {
+		txt := strings.TrimSpace(l.Text)
+		if txt != "People" && txt != "Devices" && txt != "Items" {
+			continue
+		}
+		if l.Y > 220 {
+			continue
+		}
+		if r := l.X + l.Width; r > maxTabRight {
+			maxTabRight = r
+		}
+	}
+	if maxTabRight == 0 {
+		return fallbackRightPx
+	}
+	observed := maxTabRight + 40
+	if observed < fallbackRightPx {
+		return observed
+	}
+	return fallbackRightPx
+}
+
+// detectPeopleRowStartY returns the y-coordinate (image pixels) below
+// which actual people rows begin, computed as the bottom of the tab-pill
+// band plus 12px padding. The 120px fallback is effectively unreachable
+// because callers gate on RequireSidebarVisible — if there's no tab pill,
+// parsing is short-circuited before this is consulted.
+func detectPeopleRowStartY(lines []TextLine, sidebarRightPx int) int {
+	const fallbackY = 120
+	bottom := 0
+	for _, l := range lines {
+		txt := strings.TrimSpace(l.Text)
+		if txt != "People" && txt != "Devices" && txt != "Items" {
+			continue
+		}
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		if l.Y > 220 {
+			continue
+		}
+		if b := l.Y + l.Height; b > bottom {
+			bottom = b
+		}
+	}
+	if bottom == 0 {
+		return fallbackY
+	}
+	return bottom + 12
 }
 
 // mergeWrappedContinuations folds OCR lines that Vision split across two
