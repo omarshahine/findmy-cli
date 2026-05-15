@@ -1,6 +1,6 @@
 {
   "name": "findmy-cli",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "OpenClaw plugin for macOS Find My friend locations. Shells out to the findmy CLI to drive FindMy.app via screen capture and Vision OCR. macOS-only. Install findmy first via `brew install omarshahine/tap/findmy-cli`.",
   "type": "module",
   "openclaw": {

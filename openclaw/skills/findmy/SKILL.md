@@ -8,7 +8,7 @@ description: |
 license: MIT
 metadata:
   author: Omar Shahine
-  version: 0.1.2
+  version: 0.2.0
   openclaw:
     emoji: pushpin
     os: [darwin]
