@@ -93,7 +93,7 @@ func runPeople(args []string) {
 	must(err)
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
-	must(findmy.RequireSidebarVisible(lines, sidebarRightPx))
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "People"))
 	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
 
 	if opts.json {
@@ -130,6 +130,7 @@ func runDevices(args []string) {
 	must(err)
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Devices"))
 	devices := findmy.ParseDevices(lines, sidebarRightPx, textColMinPx)
 
 	if opts.json {
@@ -174,6 +175,7 @@ func runDevice(args []string) {
 	must(err)
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Devices"))
 	devices := findmy.ParseDevices(lines, sidebarRightPx, textColMinPx)
 
 	var match *findmy.Device
@@ -231,7 +233,7 @@ func runPerson(args []string) {
 	must(err)
 
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
-	must(findmy.RequireSidebarVisible(lines, sidebarRightPx))
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "People"))
 	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
 
 	var match *findmy.Person
