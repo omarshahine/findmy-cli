@@ -18,7 +18,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: openclaw/package-lock.json
-      - run: npm ci
+      - run: npm ci --force
       - run: npx @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute
       - uses: actions/upload-artifact@v5
         if: always()
