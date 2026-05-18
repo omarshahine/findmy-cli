@@ -6,3 +6,6 @@
 openclaw/node_modules/
 openclaw/dist/
 openclaw/reports/
+
+# Clawpatch local review state
+.clawpatch/
