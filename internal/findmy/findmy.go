@@ -47,6 +47,14 @@ type Device struct {
 	Battery   string `json:"battery,omitempty"`
 }
 
+type Item struct {
+	Name      string `json:"name"`
+	Location  string `json:"location,omitempty"`
+	Staleness string `json:"staleness,omitempty"`
+	Distance  string `json:"distance,omitempty"`
+	Battery   string `json:"battery,omitempty"`
+}
+
 func helper() string {
 	if env := os.Getenv("FINDMY_HELPER"); env != "" {
 		return env
@@ -230,6 +238,12 @@ func PreparePeople() (*Window, error) {
 // phone" / "where are my AirPods" queries on his own iCloud.
 func PrepareDevices() (*Window, error) {
 	return prepareTab(GetAppStrings().DevicesTab)
+}
+
+// PrepareItems is the Items-tab mirror of PrepareDevices. AirTags, AirPods
+// cases, and third-party Find My network trackers live in this tab.
+func PrepareItems() (*Window, error) {
+	return prepareTab(GetAppStrings().ItemsTab)
 }
 
 func prepareTab(tab string) (*Window, error) {
@@ -533,6 +547,69 @@ func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
 		current.Staleness = stale
 	}
 	return devices
+}
+
+// ParseItems groups OCR lines from the Items sidebar into Item records.
+// The layout mirrors Devices (icon column on left, text band middle, distance
+// right) and can also carry a battery indicator OCR'd as "82%" or similar.
+func ParseItems(lines []TextLine, sidebarRightPx, textColMinPx int) []Item {
+	rows := make([]TextLine, 0, len(lines))
+	effectiveSidebarRightPx := detectSidebarRight(lines, sidebarRightPx)
+	rowStartY := detectSidebarRowStartY(lines, effectiveSidebarRightPx)
+	for _, l := range lines {
+		if strings.TrimSpace(l.Text) == "" {
+			continue
+		}
+		if l.X+l.Width/2 >= effectiveSidebarRightPx {
+			continue
+		}
+		if l.Y < rowStartY {
+			continue
+		}
+		if l.X < textColMinPx {
+			continue
+		}
+		rows = append(rows, l)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Y == rows[j].Y {
+			return rows[i].X < rows[j].X
+		}
+		return rows[i].Y < rows[j].Y
+	})
+	rows = mergeWrappedContinuations(rows)
+
+	skip := GetAppStrings().SkipWords()
+
+	items := make([]Item, 0)
+	var current *Item
+	for _, l := range rows {
+		txt := strings.TrimSpace(l.Text)
+		if skip[txt] {
+			continue
+		}
+		if isDistance(txt) {
+			if current != nil {
+				current.Distance = txt
+			}
+			continue
+		}
+		if isBattery(txt) {
+			if current != nil {
+				current.Battery = txt
+			}
+			continue
+		}
+		if current == nil || current.Location != "" {
+			items = append(items, Item{Name: txt})
+			current = &items[len(items)-1]
+			continue
+		}
+		loc, stale := splitLocationStaleness(txt)
+		current.Location = loc
+		current.Staleness = stale
+	}
+	return items
 }
 
 // isBattery recognizes FindMy.app's battery-indicator OCR fragments. The

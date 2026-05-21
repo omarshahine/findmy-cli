@@ -34,3 +34,16 @@ func TestSkipWordsIncludesLocalizedAndEnglishTabs(t *testing.T) {
 		}
 	}
 }
+
+func TestLookupStringsHasItemsTab(t *testing.T) {
+	tests := []string{"en", "fr-FR", "de-DE", "ja-JP", "pt-BR"}
+
+	for _, lang := range tests {
+		t.Run(lang, func(t *testing.T) {
+			got := lookupStrings(lang)
+			if got.ItemsTab == "" {
+				t.Fatalf("ItemsTab is empty")
+			}
+		})
+	}
+}

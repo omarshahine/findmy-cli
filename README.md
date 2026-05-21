@@ -1,9 +1,9 @@
 # findmy-cli
 
-Read your Find My people and device locations from the macOS FindMy.app via UI
+Read your Find My people, device, and item locations from the macOS FindMy.app via UI
 scraping. Apple does not expose a public API for Find My locations and the
 on-disk caches are encrypted with keychain-bound keys, so this tool drives the
-GUI: it activates FindMy.app, switches to the People or Devices tab,
+GUI: it activates FindMy.app, switches to the People, Devices, or Items tab,
 screenshots the window, and runs Vision OCR on the result.
 
 ## Why a Go CLI plus a Swift helper
@@ -76,6 +76,14 @@ findmy devices --json
 # Read one matching device.
 findmy device "Omar's iPhone"
 findmy device "Omar's iPhone" --json
+
+# List items in the sidebar.
+findmy items
+findmy items --json
+
+# Read one matching item.
+findmy item "AirPods Pro"
+findmy item "AirPods Pro" --json
 ```
 
 FindMy.app menu, tab, and sidebar labels are localized on non-English macOS
