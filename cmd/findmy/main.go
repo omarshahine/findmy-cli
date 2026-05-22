@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/oshahine/findmy-cli/internal/findmy"
 )
@@ -38,19 +40,21 @@ func usage() {
 
 Usage:
   findmy people  [--json] [--keep]
-  findmy person  <name> [--json] [--keep]
+  findmy person  <name> [--json] [--keep] [--zoom]
   findmy devices [--json] [--keep]
-  findmy device  <name> [--json] [--keep]
+  findmy device  <name> [--json] [--keep] [--zoom]
 
 Flags:
   --json   emit JSON instead of a human table
-  --keep   leave debug screenshots in /tmp/findmy-cli/`)
+  --keep   leave debug screenshots in /tmp/findmy-cli/
+  --zoom   click matched row and OCR the detail pane`)
 	os.Exit(2)
 }
 
 type runOpts struct {
 	json bool
 	keep bool
+	zoom bool
 }
 
 // parseOpts splits args into known flags and positional args. Go's flag
@@ -66,6 +70,8 @@ func parseOpts(args []string) (runOpts, []string) {
 			o.json = true
 		case "--keep", "-keep":
 			o.keep = true
+		case "--zoom", "-zoom":
+			o.zoom = true
 		default:
 			positional = append(positional, a)
 		}
@@ -160,7 +166,7 @@ func runDevices(args []string) {
 func runDevice(args []string) {
 	opts, rest := parseOpts(args)
 	if len(rest) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: findmy device <name> [--json] [--keep]")
+		fmt.Fprintln(os.Stderr, "usage: findmy device <name> [--json] [--keep] [--zoom]")
 		os.Exit(2)
 	}
 	target := strings.ToLower(strings.Join(rest, " "))
@@ -197,6 +203,20 @@ func runDevice(args []string) {
 		fmt.Fprintf(os.Stderr, "no device matching %q in sidebar\n", target)
 		os.Exit(1)
 	}
+	if opts.zoom {
+		nameLine, ok := findSidebarNameLine(lines, sidebarRightPx, textColMinPx, match.Name)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "could not locate sidebar row for %q\n", match.Name)
+			os.Exit(1)
+		}
+		detailShot := filepath.Join(tmpDir(), "device-detail.png")
+		must(enrichWithDetailPane(w, shot, detailShot, nameLine, sidebarRightPx, opts.keep, func(precise, city, region, postal string) {
+			match.PreciseAddress = precise
+			match.City = city
+			match.Region = region
+			match.PostalCode = postal
+		}))
+	}
 
 	if opts.json {
 		emitJSON(match)
@@ -212,13 +232,19 @@ func runDevice(args []string) {
 	if match.Battery != "" {
 		fmt.Printf("  {%s}", match.Battery)
 	}
+	if match.PreciseAddress != "" {
+		fmt.Printf("\n  %s", match.PreciseAddress)
+		if match.City != "" || match.Region != "" || match.PostalCode != "" {
+			fmt.Printf("\n  %s", strings.TrimSpace(strings.Join([]string{match.City, match.Region, match.PostalCode}, " ")))
+		}
+	}
 	fmt.Println()
 }
 
 func runPerson(args []string) {
 	opts, rest := parseOpts(args)
 	if len(rest) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: findmy person <name> [--json] [--zoom]")
+		fmt.Fprintln(os.Stderr, "usage: findmy person <name> [--json] [--keep] [--zoom]")
 		os.Exit(2)
 	}
 	target := strings.ToLower(strings.Join(rest, " "))
@@ -255,6 +281,20 @@ func runPerson(args []string) {
 		fmt.Fprintf(os.Stderr, "no person matching %q in sidebar\n", target)
 		os.Exit(1)
 	}
+	if opts.zoom {
+		nameLine, ok := findSidebarNameLine(lines, sidebarRightPx, textColMinPx, match.Name)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "could not locate sidebar row for %q\n", match.Name)
+			os.Exit(1)
+		}
+		detailShot := filepath.Join(tmpDir(), "person-detail.png")
+		must(enrichWithDetailPane(w, shot, detailShot, nameLine, sidebarRightPx, opts.keep, func(precise, city, region, postal string) {
+			match.PreciseAddress = precise
+			match.City = city
+			match.Region = region
+			match.PostalCode = postal
+		}))
+	}
 
 	if opts.json {
 		emitJSON(match)
@@ -267,7 +307,79 @@ func runPerson(args []string) {
 	if match.Distance != "" {
 		fmt.Printf("  [%s]", match.Distance)
 	}
+	if match.PreciseAddress != "" {
+		fmt.Printf("\n  %s", match.PreciseAddress)
+		if match.City != "" || match.Region != "" || match.PostalCode != "" {
+			fmt.Printf("\n  %s", strings.TrimSpace(strings.Join([]string{match.City, match.Region, match.PostalCode}, " ")))
+		}
+	}
 	fmt.Println()
+}
+
+func findSidebarNameLine(lines []findmy.TextLine, sidebarRightPx, textColMinPx int, name string) (findmy.TextLine, bool) {
+	target := strings.ToLower(strings.TrimSpace(name))
+	var contains *findmy.TextLine
+	for i := range lines {
+		l := lines[i]
+		txt := strings.TrimSpace(l.Text)
+		if txt == "" {
+			continue
+		}
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		if l.X < textColMinPx {
+			continue
+		}
+		candidate := strings.ToLower(txt)
+		if candidate == target {
+			return l, true
+		}
+		if contains == nil && strings.Contains(candidate, target) {
+			contains = &l
+		}
+	}
+	if contains != nil {
+		return *contains, true
+	}
+	return findmy.TextLine{}, false
+}
+
+func enrichWithDetailPane(w *findmy.Window, sidebarShotPath, detailShotPath string, clickLine findmy.TextLine, sidebarRightPx int, keep bool, apply func(precise, city, region, postal string)) error {
+	clickX := clickLine.X + clickLine.Width/2
+	clickY := clickLine.Y + clickLine.Height/2
+	screenX, screenY := windowPointFromImagePoint(w, sidebarShotPath, clickX, clickY)
+	if err := findmy.Click(screenX, screenY); err != nil {
+		return fmt.Errorf("click matched row: %w", err)
+	}
+
+	time.Sleep(zoomDelay())
+
+	if err := findmy.Capture(w, detailShotPath); err != nil {
+		return err
+	}
+	defer cleanup(detailShotPath, keep)
+
+	lines, err := findmy.OCR(detailShotPath)
+	if err != nil {
+		return err
+	}
+	precise, city, region, postal := findmy.ExtractDetailPaneAddress(lines, sidebarRightPx)
+	if precise != "" || city != "" || region != "" || postal != "" {
+		apply(precise, city, region, postal)
+	}
+	return nil
+}
+
+func zoomDelay() time.Duration {
+	const fallback = 600 * time.Millisecond
+	if raw := os.Getenv("FINDMY_ZOOM_DELAY_MS"); raw != "" {
+		ms, err := strconv.Atoi(raw)
+		if err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return fallback
 }
 
 // pixelLayout returns the sidebar-right and name-column-left thresholds in

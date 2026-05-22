@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -33,18 +34,26 @@ type TextLine struct {
 }
 
 type Person struct {
-	Name      string `json:"name"`
-	Location  string `json:"location,omitempty"`
-	Staleness string `json:"staleness,omitempty"`
-	Distance  string `json:"distance,omitempty"`
+	Name           string `json:"name"`
+	Location       string `json:"location,omitempty"`
+	Staleness      string `json:"staleness,omitempty"`
+	Distance       string `json:"distance,omitempty"`
+	PreciseAddress string `json:"precise_address,omitempty"`
+	City           string `json:"city,omitempty"`
+	Region         string `json:"region,omitempty"`
+	PostalCode     string `json:"postal_code,omitempty"`
 }
 
 type Device struct {
-	Name      string `json:"name"`
-	Location  string `json:"location,omitempty"`
-	Staleness string `json:"staleness,omitempty"`
-	Distance  string `json:"distance,omitempty"`
-	Battery   string `json:"battery,omitempty"`
+	Name           string `json:"name"`
+	Location       string `json:"location,omitempty"`
+	Staleness      string `json:"staleness,omitempty"`
+	Distance       string `json:"distance,omitempty"`
+	Battery        string `json:"battery,omitempty"`
+	PreciseAddress string `json:"precise_address,omitempty"`
+	City           string `json:"city,omitempty"`
+	Region         string `json:"region,omitempty"`
+	PostalCode     string `json:"postal_code,omitempty"`
 }
 
 func helper() string {
@@ -554,4 +563,126 @@ func isBattery(s string) bool {
 		}
 	}
 	return true
+}
+
+var cityRegionPostalRE = regexp.MustCompile(`^([A-Za-z .'-]+),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)?$`)
+
+// ExtractDetailPaneAddress filters OCR lines to FindMy's right-side detail
+// pane and extracts the address rendered below the selected person/device
+// header. US addresses are split into city/region/postal when possible;
+// otherwise the visible address lines are returned as a single precise address.
+func ExtractDetailPaneAddress(lines []TextLine, sidebarRightPx int) (precise, city, region, postal string) {
+	rightPane := make([]TextLine, 0, len(lines))
+	for _, l := range lines {
+		txt := strings.TrimSpace(l.Text)
+		if txt == "" {
+			continue
+		}
+		if l.X <= sidebarRightPx+20 {
+			continue
+		}
+		rightPane = append(rightPane, l)
+	}
+	sort.SliceStable(rightPane, func(i, j int) bool {
+		if rightPane[i].Y == rightPane[j].Y {
+			return rightPane[i].X < rightPane[j].X
+		}
+		return rightPane[i].Y < rightPane[j].Y
+	})
+
+	addressLines := make([]string, 0, 3)
+	seenHeader := false
+	for _, l := range rightPane {
+		txt := normalizeDetailPaneText(l.Text)
+		if txt == "" {
+			continue
+		}
+		if skipDetailPaneText(txt) {
+			if len(addressLines) > 0 {
+				break
+			}
+			continue
+		}
+		if !seenHeader {
+			seenHeader = true
+			continue
+		}
+		if len(addressLines) > 0 && !looksLikeAddressLine(txt) {
+			break
+		}
+		addressLines = append(addressLines, txt)
+		if _, _, _, ok := parseCityRegionPostal(txt); ok {
+			break
+		}
+		if len(addressLines) >= 4 {
+			break
+		}
+	}
+
+	if len(addressLines) == 0 {
+		return "", "", "", ""
+	}
+	for i, line := range addressLines {
+		if c, r, p, ok := parseCityRegionPostal(line); ok {
+			if i == 0 {
+				return line, c, r, p
+			}
+			return strings.Join(addressLines[:i], ", "), c, r, p
+		}
+	}
+	return strings.Join(addressLines, ", "), "", "", ""
+}
+
+func normalizeDetailPaneText(s string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+}
+
+func parseCityRegionPostal(s string) (city, region, postal string, ok bool) {
+	m := cityRegionPostalRE.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return "", "", "", false
+	}
+	return m[1], m[2], m[3], true
+}
+
+func looksLikeAddressLine(s string) bool {
+	if _, _, _, ok := parseCityRegionPostal(s); ok {
+		return true
+	}
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			return true
+		}
+	}
+	t := strings.ToLower(s)
+	for _, word := range []string{"street", "st", "avenue", "ave", "road", "rd", "drive", "dr", "lane", "ln", "way", "place", "pl", "court", "ct", "boulevard", "blvd"} {
+		if strings.Contains(t, word) {
+			return true
+		}
+	}
+	return false
+}
+
+func skipDetailPaneText(s string) bool {
+	t := strings.ToLower(strings.TrimSpace(s))
+	if t == "" {
+		return true
+	}
+	for _, button := range GetAppStrings().DetailButtons() {
+		if t == strings.ToLower(button) {
+			return true
+		}
+	}
+	if strings.Contains(t, " updated ") || strings.HasPrefix(t, "updated ") || strings.Contains(t, " away") {
+		return true
+	}
+	if strings.HasPrefix(t, "battery") || isBattery(t) {
+		return true
+	}
+	for _, section := range []string{"notifications", "notify when left behind", "no location found", "offline"} {
+		if t == section {
+			return true
+		}
+	}
+	return false
 }
