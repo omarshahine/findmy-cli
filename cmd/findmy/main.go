@@ -25,6 +25,10 @@ func main() {
 		runDevices(os.Args[2:])
 	case "device":
 		runDevice(os.Args[2:])
+	case "items":
+		runItems(os.Args[2:])
+	case "item":
+		runItem(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -41,6 +45,8 @@ Usage:
   findmy person  <name> [--json] [--keep]
   findmy devices [--json] [--keep]
   findmy device  <name> [--json] [--keep]
+  findmy items   [--json] [--keep]
+  findmy item    <name> [--json] [--keep]
 
 Flags:
   --json   emit JSON instead of a human table
@@ -157,6 +163,46 @@ func runDevices(args []string) {
 	}
 }
 
+func runItems(args []string) {
+	opts, _ := parseOpts(args)
+
+	w, err := findmy.PrepareItems()
+	must(err)
+	shot := filepath.Join(tmpDir(), "items.png")
+	must(findmy.Capture(w, shot))
+	defer cleanup(shot, opts.keep)
+
+	lines, err := findmy.OCR(shot)
+	must(err)
+
+	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Items"))
+	items := findmy.ParseItems(lines, sidebarRightPx, textColMinPx)
+
+	if opts.json {
+		emitJSON(items)
+		return
+	}
+	if len(items) == 0 {
+		fmt.Println("(no items found)")
+		return
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	for _, item := range items {
+		fmt.Printf("%s\n  %s", item.Name, item.Location)
+		if item.Staleness != "" {
+			fmt.Printf("  (%s)", item.Staleness)
+		}
+		if item.Distance != "" {
+			fmt.Printf("  [%s]", item.Distance)
+		}
+		if item.Battery != "" {
+			fmt.Printf("  {%s}", item.Battery)
+		}
+		fmt.Println()
+	}
+}
+
 func runDevice(args []string) {
 	opts, rest := parseOpts(args)
 	if len(rest) == 0 {
@@ -195,6 +241,64 @@ func runDevice(args []string) {
 	}
 	if match == nil {
 		fmt.Fprintf(os.Stderr, "no device matching %q in sidebar\n", target)
+		os.Exit(1)
+	}
+
+	if opts.json {
+		emitJSON(match)
+		return
+	}
+	fmt.Printf("%s\n  %s", match.Name, match.Location)
+	if match.Staleness != "" {
+		fmt.Printf("  (%s)", match.Staleness)
+	}
+	if match.Distance != "" {
+		fmt.Printf("  [%s]", match.Distance)
+	}
+	if match.Battery != "" {
+		fmt.Printf("  {%s}", match.Battery)
+	}
+	fmt.Println()
+}
+
+func runItem(args []string) {
+	opts, rest := parseOpts(args)
+	if len(rest) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: findmy item <name> [--json] [--keep]")
+		os.Exit(2)
+	}
+	target := strings.ToLower(strings.Join(rest, " "))
+
+	w, err := findmy.PrepareItems()
+	must(err)
+	shot := filepath.Join(tmpDir(), "items.png")
+	must(findmy.Capture(w, shot))
+	defer cleanup(shot, opts.keep)
+
+	lines, err := findmy.OCR(shot)
+	must(err)
+
+	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Items"))
+	items := findmy.ParseItems(lines, sidebarRightPx, textColMinPx)
+
+	var match *findmy.Item
+	for i := range items {
+		if strings.EqualFold(strings.TrimSpace(items[i].Name), target) {
+			match = &items[i]
+			break
+		}
+	}
+	if match == nil {
+		for i := range items {
+			if strings.Contains(strings.ToLower(items[i].Name), target) {
+				match = &items[i]
+				break
+			}
+		}
+	}
+	if match == nil {
+		fmt.Fprintf(os.Stderr, "no item matching %q in sidebar\n", target)
 		os.Exit(1)
 	}
 
