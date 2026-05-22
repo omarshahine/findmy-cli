@@ -15,13 +15,14 @@ import (
 //
 // Override auto-detection with FINDMY_LANG=fr (or any key in localeTable).
 type AppStrings struct {
-	WindowOwner  string   // CGWindowList owner (e.g. "Find My", "Localiser")
-	ViewMenu     string   // View menu bar item (e.g. "View", "Présentation")
-	PeopleTab    string   // People tab in View menu
-	DevicesTab   string   // Devices tab
-	ItemsTab     string   // Items tab
-	SearchLabel  string   // Search field label in sidebar
-	TimeSuffixes []string // patterns for wrapped-line merging (see looksLikeTimeSuffix)
+	WindowOwner       string   // CGWindowList owner (e.g. "Find My", "Localiser")
+	ViewMenu          string   // View menu bar item (e.g. "View", "Présentation")
+	PeopleTab         string   // People tab in View menu
+	DevicesTab        string   // Devices tab
+	ItemsTab          string   // Items tab
+	SearchLabel       string   // Search field label in sidebar
+	TimeSuffixes      []string // patterns for wrapped-line merging (see looksLikeTimeSuffix)
+	DetailPaneButtons []string // Button labels to ignore while OCR'ing the detail pane
 }
 
 var (
@@ -117,6 +118,7 @@ func lookupStrings(lang string) *AppStrings {
 func (s *AppStrings) clone() *AppStrings {
 	c := *s
 	c.TimeSuffixes = append([]string{}, s.TimeSuffixes...)
+	c.DetailPaneButtons = append([]string{}, s.DetailPaneButtons...)
 	return &c
 }
 
@@ -136,6 +138,21 @@ func (s *AppStrings) SkipWords() map[string]bool {
 		skip[w] = true
 	}
 	return skip
+}
+
+// DetailButtons returns labels that FindMy renders as actions in the
+// right-side detail pane, not address text.
+func (s *AppStrings) DetailButtons() []string {
+	buttons := []string{
+		"Directions",
+		"Notify",
+		"Share My Location",
+		"Find",
+		"Play Sound",
+		"Notify When Found",
+	}
+	buttons = append(buttons, s.DetailPaneButtons...)
+	return buttons
 }
 
 // --- Time suffix patterns ---
