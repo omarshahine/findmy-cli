@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/oshahine/findmy-cli/internal/findmy"
 )
@@ -29,6 +30,8 @@ func main() {
 		runItems(os.Args[2:])
 	case "item":
 		runItem(os.Args[2:])
+	case "watch":
+		runWatch(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -47,10 +50,14 @@ Usage:
   findmy device  <name> [--json] [--keep]
   findmy items   [--json] [--keep]
   findmy item    <name> [--json] [--keep]
+  findmy watch   <people|devices|items> [--interval=5m] [--diff] [--json] [--once]
 
 Flags:
-  --json   emit JSON instead of a human table
-  --keep   leave debug screenshots in /tmp/findmy-cli/`)
+  --json           emit JSON instead of a human table
+  --keep           leave debug screenshots in /tmp/findmy-cli/
+  --interval=DUR   watch polling interval (default 5m)
+  --diff           watch: emit only changed rows (default on for --json, off for human)
+  --once           watch: poll once and exit`)
 	os.Exit(2)
 }
 
@@ -78,6 +85,91 @@ func parseOpts(args []string) (runOpts, []string) {
 	}
 	_ = flag.CommandLine
 	return o, positional
+}
+
+func runWatch(args []string) {
+	opts, err := parseWatchOpts(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(os.Stderr, "usage: findmy watch <people|devices|items> [--interval=5m] [--diff] [--json] [--once]")
+		os.Exit(2)
+	}
+	must(findmy.Watch(opts))
+}
+
+func parseWatchOpts(args []string) (findmy.WatchOptions, error) {
+	opts := findmy.WatchOptions{Interval: 5 * time.Minute}
+	var positional []string
+	diffSet := false
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--json" || a == "-json":
+			opts.JSON = true
+		case a == "--once" || a == "-once":
+			opts.Once = true
+		case a == "--diff" || a == "-diff":
+			opts.Diff = true
+			diffSet = true
+		case a == "--diff=false" || a == "-diff=false" || a == "--no-diff":
+			opts.Diff = false
+			diffSet = true
+		case a == "--interval" || a == "-interval":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("missing value for %s", a)
+			}
+			interval, err := parseWatchInterval(args[i])
+			if err != nil {
+				return opts, fmt.Errorf("invalid interval %q: %w", args[i], err)
+			}
+			opts.Interval = interval
+		case strings.HasPrefix(a, "--interval="):
+			intervalText := strings.TrimPrefix(a, "--interval=")
+			interval, err := parseWatchInterval(intervalText)
+			if err != nil {
+				return opts, fmt.Errorf("invalid interval %q: %w", intervalText, err)
+			}
+			opts.Interval = interval
+		case strings.HasPrefix(a, "-interval="):
+			intervalText := strings.TrimPrefix(a, "-interval=")
+			interval, err := parseWatchInterval(intervalText)
+			if err != nil {
+				return opts, fmt.Errorf("invalid interval %q: %w", intervalText, err)
+			}
+			opts.Interval = interval
+		case strings.HasPrefix(a, "-"):
+			return opts, fmt.Errorf("unknown flag %s", a)
+		default:
+			positional = append(positional, a)
+		}
+	}
+
+	if len(positional) != 1 {
+		return opts, fmt.Errorf("watch requires exactly one kind")
+	}
+	opts.Kind = findmy.WatchKind(positional[0])
+	switch opts.Kind {
+	case findmy.WatchPeople, findmy.WatchDevices, findmy.WatchItems:
+	default:
+		return opts, fmt.Errorf("unknown watch kind %q", positional[0])
+	}
+	if !diffSet {
+		opts.Diff = opts.JSON
+	}
+	return opts, nil
+}
+
+func parseWatchInterval(text string) (time.Duration, error) {
+	interval, err := time.ParseDuration(text)
+	if err != nil {
+		return 0, err
+	}
+	if interval <= 0 {
+		return 0, fmt.Errorf("must be greater than zero")
+	}
+	return interval, nil
 }
 
 func tmpDir() string {
