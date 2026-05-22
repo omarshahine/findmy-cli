@@ -463,11 +463,35 @@ func isDistance(s string) bool {
 	return false
 }
 
+// splitLocationStaleness parses a "<location> • <staleness>" sidebar line into
+// its two halves. One wrinkle: when the device is the Mac the user is
+// currently running on, FindMy.app puts a "This Mac" badge in the location
+// slot instead of an actual place ("This Mac • No location found"). The badge
+// is not a location, so when the left half is one of the known "This <device>"
+// labels we treat the right half as the location and drop the badge.
 func splitLocationStaleness(s string) (location, staleness string) {
-	if idx := strings.Index(s, "•"); idx >= 0 {
-		return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+len("•"):])
+	idx := strings.Index(s, "•")
+	if idx < 0 {
+		return s, ""
 	}
-	return s, ""
+	left := strings.TrimSpace(s[:idx])
+	right := strings.TrimSpace(s[idx+len("•"):])
+	if isThisDeviceLabel(left) {
+		return right, ""
+	}
+	return left, right
+}
+
+// isThisDeviceLabel reports whether s is the "This Mac" / "This iPhone" /
+// "This iPad" badge FindMy.app shows on the device the user is currently
+// signed into. The label is English-only here; other locales translate it
+// (e.g. "Ce Mac" in French) but those strings are not yet catalogued.
+func isThisDeviceLabel(s string) bool {
+	switch s {
+	case "This Mac", "This iPhone", "This iPad", "This Apple Watch":
+		return true
+	}
+	return false
 }
 
 // ParseDevices groups OCR lines from the Devices sidebar into Device records.
