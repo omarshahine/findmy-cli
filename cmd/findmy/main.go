@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/oshahine/findmy-cli/internal/findmy"
+	"github.com/oshahine/findmy-cli/internal/findmy/ledger"
 )
 
 func main() {
@@ -32,6 +36,8 @@ func main() {
 		runItem(os.Args[2:])
 	case "watch":
 		runWatch(os.Args[2:])
+	case "log":
+		runLog(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -51,10 +57,12 @@ Usage:
   findmy items   [--json] [--keep]
   findmy item    <name> [--json] [--keep]
   findmy watch   <people|devices|items> [--interval=5m] [--diff] [--json] [--once]
+  findmy log     <name> [--kind=people|devices|items] [--since=DURATION] [--until=DURATION] [--limit=N] [--json]
 
 Flags:
   --json           emit JSON instead of a human table
   --keep           leave debug screenshots in /tmp/findmy-cli/
+  --no-log         skip writing observations to the history ledger
   --interval=DUR   watch polling interval (default 5m)
   --diff           watch: emit only changed rows (default on for --json, off for human)
   --once           watch: poll once and exit`)
@@ -62,8 +70,9 @@ Flags:
 }
 
 type runOpts struct {
-	json bool
-	keep bool
+	json  bool
+	keep  bool
+	noLog bool
 }
 
 // parseOpts splits args into known flags and positional args. Go's flag
@@ -79,6 +88,8 @@ func parseOpts(args []string) (runOpts, []string) {
 			o.json = true
 		case "--keep", "-keep":
 			o.keep = true
+		case "--no-log", "-no-log":
+			o.noLog = true
 		default:
 			positional = append(positional, a)
 		}
@@ -193,6 +204,7 @@ func runPeople(args []string) {
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
 	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "People"))
 	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
+	appendObservations("people", peopleObservations(people), opts.noLog)
 
 	if opts.json {
 		emitJSON(people)
@@ -230,6 +242,7 @@ func runDevices(args []string) {
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
 	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Devices"))
 	devices := findmy.ParseDevices(lines, sidebarRightPx, textColMinPx)
+	appendObservations("devices", deviceObservations(devices), opts.noLog)
 
 	if opts.json {
 		emitJSON(devices)
@@ -270,6 +283,7 @@ func runItems(args []string) {
 	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
 	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Items"))
 	items := findmy.ParseItems(lines, sidebarRightPx, textColMinPx)
+	appendObservations("items", itemObservations(items), opts.noLog)
 
 	if opts.json {
 		emitJSON(items)
@@ -409,6 +423,238 @@ func runItem(args []string) {
 		fmt.Printf("  {%s}", match.Battery)
 	}
 	fmt.Println()
+}
+
+type logOpts struct {
+	json  bool
+	kind  string
+	since time.Duration
+	until time.Duration
+	limit int
+}
+
+func runLog(args []string) {
+	opts, rest, err := parseLogOpts(args)
+	must(err)
+	if len(rest) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: findmy log <name> [--kind=people|devices|items] [--since=DURATION] [--until=DURATION] [--limit=N] [--json]")
+		os.Exit(2)
+	}
+
+	now := time.Now()
+	query := ledger.QueryOptions{
+		Name:  strings.Join(rest, " "),
+		Kind:  opts.kind,
+		Limit: opts.limit,
+	}
+	if opts.since > 0 {
+		query.Since = now.Add(-opts.since)
+	}
+	if opts.until > 0 {
+		query.Until = now.Add(-opts.until)
+	}
+
+	l, err := ledger.Open("")
+	must(err)
+	defer l.Close()
+
+	obs, err := l.Query(context.Background(), query)
+	must(err)
+	if opts.json {
+		emitJSON(obs)
+		return
+	}
+	if len(obs) == 0 {
+		fmt.Println("(no observations found)")
+		return
+	}
+	printLog(obs)
+}
+
+func parseLogOpts(args []string) (logOpts, []string, error) {
+	opts := logOpts{limit: 100}
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--json" || a == "-json":
+			opts.json = true
+		case a == "--kind" || a == "-kind":
+			i++
+			if i >= len(args) {
+				return opts, nil, fmt.Errorf("--kind requires a value")
+			}
+			opts.kind = args[i]
+		case strings.HasPrefix(a, "--kind="):
+			opts.kind = strings.TrimPrefix(a, "--kind=")
+		case strings.HasPrefix(a, "-kind="):
+			opts.kind = strings.TrimPrefix(a, "-kind=")
+		case a == "--since" || a == "-since":
+			i++
+			if i >= len(args) {
+				return opts, nil, fmt.Errorf("--since requires a duration")
+			}
+			d, err := time.ParseDuration(args[i])
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --since: %w", err)
+			}
+			opts.since = d
+		case strings.HasPrefix(a, "--since="):
+			d, err := time.ParseDuration(strings.TrimPrefix(a, "--since="))
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --since: %w", err)
+			}
+			opts.since = d
+		case strings.HasPrefix(a, "-since="):
+			d, err := time.ParseDuration(strings.TrimPrefix(a, "-since="))
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --since: %w", err)
+			}
+			opts.since = d
+		case a == "--until" || a == "-until":
+			i++
+			if i >= len(args) {
+				return opts, nil, fmt.Errorf("--until requires a duration")
+			}
+			d, err := time.ParseDuration(args[i])
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --until: %w", err)
+			}
+			opts.until = d
+		case strings.HasPrefix(a, "--until="):
+			d, err := time.ParseDuration(strings.TrimPrefix(a, "--until="))
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --until: %w", err)
+			}
+			opts.until = d
+		case strings.HasPrefix(a, "-until="):
+			d, err := time.ParseDuration(strings.TrimPrefix(a, "-until="))
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --until: %w", err)
+			}
+			opts.until = d
+		case a == "--limit" || a == "-limit":
+			i++
+			if i >= len(args) {
+				return opts, nil, fmt.Errorf("--limit requires a value")
+			}
+			limit, err := strconv.Atoi(args[i])
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --limit: %w", err)
+			}
+			opts.limit = limit
+		case strings.HasPrefix(a, "--limit="):
+			limit, err := strconv.Atoi(strings.TrimPrefix(a, "--limit="))
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --limit: %w", err)
+			}
+			opts.limit = limit
+		case strings.HasPrefix(a, "-limit="):
+			limit, err := strconv.Atoi(strings.TrimPrefix(a, "-limit="))
+			if err != nil {
+				return opts, nil, fmt.Errorf("parse --limit: %w", err)
+			}
+			opts.limit = limit
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if opts.kind != "" && opts.kind != "people" && opts.kind != "devices" && opts.kind != "items" {
+		return opts, nil, fmt.Errorf("--kind must be people, devices, or items")
+	}
+	if opts.limit < 0 {
+		return opts, nil, fmt.Errorf("--limit must be non-negative")
+	}
+	return opts, positional, nil
+}
+
+func appendObservations(kind string, obs []ledger.Observation, skip bool) {
+	if skip || len(obs) == 0 {
+		return
+	}
+	l, err := ledger.Open("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not open %s history ledger: %v\n", kind, err)
+		return
+	}
+	defer l.Close()
+	if err := l.Append(context.Background(), obs); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not write %s history ledger: %v\n", kind, err)
+	}
+}
+
+func peopleObservations(people []findmy.Person) []ledger.Observation {
+	now := time.Now().UTC()
+	obs := make([]ledger.Observation, 0, len(people))
+	for _, p := range people {
+		raw, _ := json.Marshal(p)
+		obs = append(obs, ledger.Observation{
+			Ts:        now,
+			Kind:      "people",
+			Name:      p.Name,
+			Location:  p.Location,
+			Staleness: p.Staleness,
+			Distance:  p.Distance,
+			Raw:       raw,
+		})
+	}
+	return obs
+}
+
+func deviceObservations(devices []findmy.Device) []ledger.Observation {
+	now := time.Now().UTC()
+	obs := make([]ledger.Observation, 0, len(devices))
+	for _, d := range devices {
+		raw, _ := json.Marshal(d)
+		obs = append(obs, ledger.Observation{
+			Ts:        now,
+			Kind:      "devices",
+			Name:      d.Name,
+			Location:  d.Location,
+			Staleness: d.Staleness,
+			Distance:  d.Distance,
+			Battery:   d.Battery,
+			Raw:       raw,
+		})
+	}
+	return obs
+}
+
+func itemObservations(items []findmy.Item) []ledger.Observation {
+	now := time.Now().UTC()
+	obs := make([]ledger.Observation, 0, len(items))
+	for _, item := range items {
+		raw, _ := json.Marshal(item)
+		obs = append(obs, ledger.Observation{
+			Ts:        now,
+			Kind:      "items",
+			Name:      item.Name,
+			Location:  item.Location,
+			Staleness: item.Staleness,
+			Distance:  item.Distance,
+			Battery:   item.Battery,
+			Raw:       raw,
+		})
+	}
+	return obs
+}
+
+func printLog(obs []ledger.Observation) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "TS\tName\tLocation\tDistance\tBattery\tStaleness")
+	for _, o := range obs {
+		fmt.Fprintf(
+			w,
+			"%s\t%s\t%s\t%s\t%s\t%s\n",
+			o.Ts.Local().Format("2006-01-02 15:04:05"),
+			o.Name,
+			o.Location,
+			o.Distance,
+			o.Battery,
+			o.Staleness,
+		)
+	}
+	_ = w.Flush()
 }
 
 func runPerson(args []string) {

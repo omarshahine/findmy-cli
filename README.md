@@ -64,6 +64,7 @@ Requirements:
 # List people in the sidebar with coarse location, staleness, distance.
 findmy people
 findmy people --json
+findmy people --no-log
 
 # Click a row and OCR the detail pane (precise address).
 findmy person "Omar Shahine"
@@ -84,7 +85,18 @@ findmy items --json
 # Read one matching item.
 findmy item "AirPods Pro"
 findmy item "AirPods Pro" --json
+
+# Query the SQLite history ledger populated by people/devices runs.
+findmy log "Omar Shahine" --since=24h
+findmy log "Omar's iPhone" --kind=devices --limit=10 --json
 ```
+
+Successful `findmy people`, `findmy devices`, and `findmy items` runs append parsed sidebar
+records to a local SQLite ledger before printing output. Pass `--no-log` to
+skip a write for one invocation. The default database path is
+`$XDG_DATA_HOME/findmy-cli/history.sqlite`, or
+`~/.local/share/findmy-cli/history.sqlite` when `XDG_DATA_HOME` is unset.
+Set `FINDMY_HISTORY_DB=/path/to/history.sqlite` to override it.
 
 FindMy.app menu, tab, and sidebar labels are localized on non-English macOS
 installs. The CLI auto-detects the current macOS language for the supported
