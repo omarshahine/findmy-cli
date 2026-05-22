@@ -47,6 +47,14 @@ type Device struct {
 	Battery   string `json:"battery,omitempty"`
 }
 
+type Item struct {
+	Name      string `json:"name"`
+	Location  string `json:"location,omitempty"`
+	Staleness string `json:"staleness,omitempty"`
+	Distance  string `json:"distance,omitempty"`
+	Battery   string `json:"battery,omitempty"`
+}
+
 func helper() string {
 	if env := os.Getenv("FINDMY_HELPER"); env != "" {
 		return env
@@ -230,6 +238,10 @@ func PreparePeople() (*Window, error) {
 // phone" / "where are my AirPods" queries on his own iCloud.
 func PrepareDevices() (*Window, error) {
 	return prepareTab(GetAppStrings().DevicesTab)
+}
+
+func PrepareItems() (*Window, error) {
+	return prepareTab(GetAppStrings().ItemsTab)
 }
 
 func prepareTab(tab string) (*Window, error) {
@@ -533,6 +545,21 @@ func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
 		current.Staleness = stale
 	}
 	return devices
+}
+
+func ParseItems(lines []TextLine, sidebarRightPx, textColMinPx int) []Item {
+	devices := ParseDevices(lines, sidebarRightPx, textColMinPx)
+	items := make([]Item, 0, len(devices))
+	for _, d := range devices {
+		items = append(items, Item{
+			Name:      d.Name,
+			Location:  d.Location,
+			Staleness: d.Staleness,
+			Distance:  d.Distance,
+			Battery:   d.Battery,
+		})
+	}
+	return items
 }
 
 // isBattery recognizes FindMy.app's battery-indicator OCR fragments. The
