@@ -40,6 +40,13 @@ jobs:
           fi
           echo "text=$MSG" >> "$GITHUB_OUTPUT"
 
+      - name: Sync manifest version to tag (tag is source of truth)
+        run: |
+          cd openclaw
+          V="${{ steps.version.outputs.version }}"
+          npm version "$V" --no-git-tag-version --allow-same-version
+          node -e "const f='openclaw.plugin.json',j=require('./'+f);j.version='$V';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+
       - name: Install + build (compile TS so clawhub validator finds dist/)
         run: |
           cd openclaw
