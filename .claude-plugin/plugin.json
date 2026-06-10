@@ -1,6 +1,6 @@
 {
   "name": "openclaw-findmy",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "description": "Query Find My friend locations via macOS FindMy.app UI scraping. Bundles the findmy Go CLI and Swift Vision/CoreGraphics helper. Use when the user asks where someone is or wants a location refresh.",
   "author": {
     "name": "Omar Shahine"
