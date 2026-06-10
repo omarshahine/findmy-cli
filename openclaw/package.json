@@ -8,10 +8,11 @@
       "./src/index.ts"
     ],
     "compat": {
-      "pluginApi": ">=2026.3.23"
+      "pluginApi": ">=2026.6.5"
     },
     "build": {
-      "openclawVersion": "2026.4.15"
+      "openclawVersion": "2026.6.5",
+      "pluginSdkVersion": "2026.6.5"
     },
     "environment": {
       "binaries": [
@@ -65,11 +66,11 @@
     "darwin"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22.19.0"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.49",
-    "openclaw": "^2026.3.23"
+    "openclaw": "^2026.6.5"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
@@ -77,8 +78,9 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --out-dir dist --dts --clean --target node20",
+    "build": "tsup src/index.ts --format esm --out-dir dist --clean --target node20",
     "plugin:check": "npx --yes @openclaw/plugin-inspector inspect --no-openclaw",
-    "plugin:ci": "npx --yes @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute"
+    "plugin:ci": "npx --yes @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute",
+    "prepack": "npm run build"
   }
 }
