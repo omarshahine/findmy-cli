@@ -29,6 +29,21 @@ Two tools available, both shell out to the `findmy` binary which drives
 FindMy.app via screen capture and Vision OCR. Read-only — never mutates
 FindMy.app state.
 
+## Privacy & consent (read first)
+
+- These tools can only read people who have **already opted in** to share their
+  location with this Mac's Apple ID in Apple's Find My. Sharing is mutual and the
+  other person controls it — the plugin cannot see anyone who has not consented,
+  and does not bypass any Apple access control.
+- Returns coarse location only (city/state, staleness, distance), the same data
+  FindMy.app shows the signed-in user. No precise coordinates, history, or
+  background tracking.
+- Intended for the Mac's owner to locate consenting friends and family. **Not a
+  surveillance tool** — never use it to monitor or track someone without their
+  knowledge and consent.
+- When a result is `Paused` or stale, surface that plainly; the position may be
+  hours or days old, and reporting it as current is misleading.
+
 ## When to use
 
 - "Where is Omar?"        → call `findmy_person` with `name: "Omar"`
@@ -59,9 +74,9 @@ take, and wait for confirmation. Examples:
 - ❌ Calling `restaurant_book` based purely on the inferred location, no
   confirmation step.
 
-Read-only location queries themselves never need approval — those are what
-the user asked for. The approval gate is on the *next* tool call that
-turns location into an action.
+Read-only location queries themselves are what the account owner asked for and
+are consent-bounded (only people already sharing show up). The approval gate is
+on the *next* tool call that turns location into an action.
 
 ## Output shape
 
