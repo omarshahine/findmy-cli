@@ -6,6 +6,14 @@ on-disk caches are encrypted with keychain-bound keys, so this tool drives the
 GUI: it activates FindMy.app, switches to the People, Devices, or Items tab,
 screenshots the window, and runs Vision OCR on the result.
 
+**Privacy & consent.** This is read-only and consent-bounded. It can only see the
+people who have already opted in to share their location with this Mac's Apple ID
+in Apple's Find My, plus your own devices and items. It returns coarse location
+only (city/state, staleness, distance), bypasses no Apple access control, and
+initiates no network traffic — everything stays on-device. Use it to locate
+consenting friends and family, not to monitor or track anyone without their
+knowledge and consent.
+
 ## Why a Go CLI plus a Swift helper
 
 The macOS APIs we need (Vision, CoreGraphics window list, CGEvent click) have no

@@ -13,6 +13,22 @@
  * - No eval, Function(), dynamic import, or curl|sh install steps.
  * - User input (`name` for findmy_person) is length-bounded and ASCII-class
  *   validated below before passing to execFile.
+ *
+ * Privacy & authorized use:
+ * - This tool can ONLY read people who have already chosen to share their
+ *   location with this Mac's Apple ID in Apple's Find My. Sharing is a mutual,
+ *   opt-in relationship managed by Apple — there is no way for this plugin to
+ *   surface anyone who has not consented at the Apple ID level. It does not
+ *   bypass, weaken, or circumvent any of Apple's access controls.
+ * - It surfaces only the coarse data FindMy.app already shows the signed-in
+ *   user (city/state, staleness, distance) — no precise coordinates, location
+ *   history, or background tracking.
+ * - Intended for personal use by the owner of this Mac on friends and family
+ *   who are knowingly sharing with them. It is NOT a surveillance tool and
+ *   must not be used to monitor anyone without their knowledge and consent.
+ * - Each tool's `description` states these boundaries (read-only,
+ *   consent-bounded, coarse-only) so they stay in the model's context whenever
+ *   the tool is offered.
  */
 
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
@@ -63,14 +79,14 @@ const TOOLS: ToolDef[] = [
 	{
 		name: 'findmy_people',
 		description:
-			'List every friend in the FindMy.app People sidebar. Returns name, coarse location (city, state), staleness, and distance for each person. Use for "who is where", "anyone near downtown", or any broad location query. Each entry includes a `staleness` field — if "Paused", the friend has paused location sharing and the location is the last known position.',
+			'List every friend in the FindMy.app People sidebar — i.e. the people who have already opted in to share their location with this Mac\'s Apple ID. Returns name, coarse location (city, state), staleness, and distance for each. Use for "who is where", "anyone near downtown", or any broad location query. Each entry includes a `staleness` field — if "Paused", the friend has paused location sharing and the location is the last known position. Read-only and consent-bounded: it cannot surface anyone who has not chosen to share, and surfaces only the coarse data Find My already shows the signed-in user.',
 		parameters: Type.Object({}),
 		buildArgs: () => ['people', '--json'],
 	},
 	{
 		name: 'findmy_person',
 		description:
-			'Look up a single friend by name (case-insensitive substring match). Returns the same shape as findmy_people but filtered. Use for "where is X", "is X home", "how far is X". Match works on partial names — "sarah" matches "Sarah Shahine".',
+			'Look up a single friend by name (case-insensitive substring match) among the people who are sharing their location with this Mac\'s Apple ID. Returns the same shape as findmy_people but filtered. Use for "where is X", "is X home", "how far is X". Match works on partial names — "sarah" matches "Sarah Shahine". Read-only and consent-bounded: it can only return someone who has opted in to share, and surfaces only coarse location.',
 		parameters: Type.Object({
 			name: Type.String({
 				description: 'Friend name or substring (case-insensitive).',
