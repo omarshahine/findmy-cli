@@ -45,7 +45,7 @@ Each source repo has `.github/workflows/publish-homebrew.yml` that, on every `v*
 
 Gated on repo secret `HOMEBREW_TAP_TOKEN`: a fine-grained PAT scoped ONLY to `homebrew-tap` with Contents: read/write (the default GITHUB_TOKEN can't push cross-repo). Stored in chezmoi as `HOMEBREW_TAP_TOKEN` in `~/.secrets-macbook-pro.env`. The SAME token value is set as a secret on all 6 source repos — reusable because it grants access to the tap, not the source repo.
 
-To add a new project to the tap: write the formula, copy `publish-homebrew.yml` (set `FORMULA_PATH` to the formula name, which may differ from repo name — e.g. repo `trakt-plugin` → `Formula/trakt-cli.rb`, repo `Apple-PIM-Agent-Plugin` → `Formula/apple-pim-cli.rb`), then `printf '%s' "$HOMEBREW_TAP_TOKEN" | gh secret set HOMEBREW_TAP_TOKEN --repo omarshahine/<repo>` after sourcing the env.
+To add a new project to the tap: write the formula, copy `publish-homebrew.yml` (set `FORMULA_PATH` to the formula name, which may differ from repo name — e.g. repo `trakt-plugin` → `Formula/trakt-cli.rb`, repo `apple-pim` → `Formula/apple-pim-cli.rb`), then `printf '%s' "$HOMEBREW_TAP_TOKEN" | gh secret set HOMEBREW_TAP_TOKEN --repo omarshahine/<repo>` after sourcing the env.
 
 apple-pim-cli formula note: Homebrew's build sandbox blocks network, so the formula vendors swift-argument-parser as a `resource` and `inreplace`s Package.swift to a local `.package(path:)` for an offline `swift build`. Verified to compile all 4 binaries (calendar/reminder/contacts/mail-cli).
 
