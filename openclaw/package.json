@@ -73,9 +73,9 @@
     "openclaw": "^2026.6.5"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^26.4.0",
     "tsup": "^8.5.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --out-dir dist --clean --target node20",
