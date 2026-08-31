@@ -69,8 +69,8 @@
     "node": ">=22.19.0"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.49",
-    "openclaw": "^2026.6.5"
+    "@sinclair/typebox": "^0.34.52",
+    "openclaw": "^2026.7.1"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
