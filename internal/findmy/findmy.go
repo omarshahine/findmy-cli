@@ -2,6 +2,7 @@ package findmy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -169,12 +170,22 @@ func MainWindow() (*Window, error) {
 // those coordinates and pollute the OCR with terminal/desktop content when
 // FindMy isn't strictly frontmost.
 //
+// `-o` omits the window's drop shadow. Without it screencapture pads the
+// bitmap with ~34pt of shadow on every side, so the image is larger than the
+// window (e.g. 2184x1672 for a 1024x768 window on a 2x display). Every caller
+// that converts between image pixels and window points — the sidebar column
+// thresholds and the click mapping — assumes image (0,0) is window (0,0) and
+// that width ratio is the backing scale. The shadow breaks both assumptions:
+// it inflates the derived scale to 2.13 and offsets every mapped point by the
+// shadow inset. With `-o` the bitmap is exactly window size times backing
+// scale, and the arithmetic is exact.
+//
 // Capture fails with a friendly error when the display is asleep or the
 // window's backing store hasn't been populated yet (Catalyst quirk after
 // rapid focus changes). Both produce "could not create image from window"
 // or a tiny all-black PNG.
 func Capture(w *Window, dest string) error {
-	cmd := exec.Command("/usr/sbin/screencapture", "-x", "-l", fmt.Sprintf("%d", w.WindowID), "-t", "png", dest)
+	cmd := exec.Command("/usr/sbin/screencapture", "-x", "-o", "-l", fmt.Sprintf("%d", w.WindowID), "-t", "png", dest)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return diagnoseCaptureFailure(err)
@@ -668,11 +679,46 @@ func isBattery(s string) bool {
 
 var cityRegionPostalRE = regexp.MustCompile(`^([A-Za-z .'-]+),\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)?$`)
 
+// detailPaneColumnTolerancePx is how far an address line's left edge may sit
+// from the header's before it stops being part of the same pane. Vision
+// reports left edges within a couple of pixels for genuinely left-aligned
+// text; 40px leaves room for a 2x display's rounding without admitting a
+// neighbouring map label.
+const detailPaneColumnTolerancePx = 40
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// ErrNoDetailPane reports that the right-hand region of the window is not a
+// detail pane. macOS 26 replaced FindMy's split view with a floating sidebar
+// over a full-bleed map, so a row click no longer reveals a pane containing
+// the selected entity's street address; the region to the right of the
+// sidebar is map canvas.
+//
+// This must be a hard error rather than a silent empty result. Before the
+// guard existed, ExtractDetailPaneAddress happily OCR'd whatever sat right of
+// the sidebar and returned it as precise_address — on this layout that is map
+// furniture, so `findmy person X --zoom` reported place names and the map's
+// own "3D" control as the person's street address. Wrong location data
+// presented as precise is worse than no data.
+var ErrNoDetailPane = errors.New("no FindMy detail pane found right of the sidebar")
+
 // ExtractDetailPaneAddress filters OCR lines to FindMy's right-side detail
 // pane and extracts the address rendered below the selected person/device
 // header. US addresses are split into city/region/postal when possible;
 // otherwise the visible address lines are returned as a single precise address.
-func ExtractDetailPaneAddress(lines []TextLine, sidebarRightPx int) (precise, city, region, postal string) {
+//
+// entityName is the name of the row that was clicked. The detail pane always
+// headers with it, and a map never renders it, so requiring the header to
+// match is the language-neutral proof that a detail pane is really on screen.
+// A returned ErrNoDetailPane means the layout has no detail pane at all;
+// a nil error with an empty precise means the pane is there but carries no
+// address (offline device, "No location found").
+func ExtractDetailPaneAddress(lines []TextLine, sidebarRightPx int, entityName string) (precise, city, region, postal string, err error) {
 	rightPane := make([]TextLine, 0, len(lines))
 	for _, l := range lines {
 		txt := strings.TrimSpace(l.Text)
@@ -693,6 +739,7 @@ func ExtractDetailPaneAddress(lines []TextLine, sidebarRightPx int) (precise, ci
 
 	addressLines := make([]string, 0, 3)
 	seenHeader := false
+	headerX := 0
 	for _, l := range rightPane {
 		txt := normalizeDetailPaneText(l.Text)
 		if txt == "" {
@@ -705,10 +752,27 @@ func ExtractDetailPaneAddress(lines []TextLine, sidebarRightPx int) (precise, ci
 			continue
 		}
 		if !seenHeader {
+			// Only the entity's own name opens the pane. Anything else here
+			// is map canvas, and consuming it as a header is what let map
+			// labels through as addresses.
+			if !matchesEntityHeader(txt, entityName) {
+				continue
+			}
 			seenHeader = true
+			headerX = l.X
 			continue
 		}
-		if len(addressLines) > 0 && !looksLikeAddressLine(txt) {
+		// Address lines are left-aligned under the header in a real pane.
+		// Map labels are scattered across the canvas, so an X far from the
+		// header's is map furniture no matter how much it reads like a
+		// street ("WAREHAM LN", "BULL RUN RD").
+		if abs(l.X-headerX) > detailPaneColumnTolerancePx {
+			break
+		}
+		// The first address line is held to the same shape test as the rest.
+		// Without this a pane whose address had not painted yet would adopt
+		// the next unrelated label.
+		if !looksLikeAddressLine(txt) {
 			break
 		}
 		addressLines = append(addressLines, txt)
@@ -720,18 +784,53 @@ func ExtractDetailPaneAddress(lines []TextLine, sidebarRightPx int) (precise, ci
 		}
 	}
 
+	if !seenHeader {
+		return "", "", "", "", ErrNoDetailPane
+	}
 	if len(addressLines) == 0 {
-		return "", "", "", ""
+		return "", "", "", "", nil
 	}
 	for i, line := range addressLines {
 		if c, r, p, ok := parseCityRegionPostal(line); ok {
 			if i == 0 {
-				return line, c, r, p
+				return line, c, r, p, nil
 			}
-			return strings.Join(addressLines[:i], ", "), c, r, p
+			return strings.Join(addressLines[:i], ", "), c, r, p, nil
 		}
 	}
-	return strings.Join(addressLines, ", "), "", "", ""
+	return strings.Join(addressLines, ", "), "", "", "", nil
+}
+
+// matchesEntityHeader reports whether an OCR line is the detail pane's header
+// for entityName. It is deliberately tolerant: Vision runs with language
+// correction off (it mangles proper nouns otherwise) but still drops or
+// garbles the occasional character, and the header may be truncated with an
+// ellipsis when the pane is narrow. Half the name's words matching is enough
+// to tell a header apart from a map label, which shares no words at all.
+func matchesEntityHeader(line, entityName string) bool {
+	name := strings.ToLower(normalizeDetailPaneText(entityName))
+	candidate := strings.ToLower(normalizeDetailPaneText(line))
+	if name == "" || candidate == "" {
+		return false
+	}
+	if candidate == name || strings.Contains(candidate, name) || strings.Contains(name, candidate) {
+		return true
+	}
+	nameWords := strings.Fields(name)
+	if len(nameWords) == 0 {
+		return false
+	}
+	candidateWords := make(map[string]bool, 8)
+	for _, w := range strings.Fields(candidate) {
+		candidateWords[w] = true
+	}
+	hits := 0
+	for _, w := range nameWords {
+		if candidateWords[w] {
+			hits++
+		}
+	}
+	return hits*2 >= len(nameWords)
 }
 
 func normalizeDetailPaneText(s string) string {
@@ -746,7 +845,21 @@ func parseCityRegionPostal(s string) (city, region, postal string, ok bool) {
 	return m[1], m[2], m[3], true
 }
 
+var streetWords = map[string]bool{
+	"street": true, "st": true, "avenue": true, "ave": true,
+	"road": true, "rd": true, "drive": true, "dr": true,
+	"lane": true, "ln": true, "way": true, "place": true,
+	"pl": true, "court": true, "ct": true, "boulevard": true, "blvd": true,
+}
+
 func looksLikeAddressLine(s string) bool {
+	// FindMy joins a coarse location to its staleness with a bullet
+	// ("Winston-Salem, NC • Now"). A street address never contains one, and
+	// this is exactly the text the redesigned map callout renders under the
+	// name — the coarse reading we already have, not a precise address.
+	if strings.ContainsAny(s, "•·") {
+		return false
+	}
 	if _, _, _, ok := parseCityRegionPostal(s); ok {
 		return true
 	}
@@ -755,9 +868,11 @@ func looksLikeAddressLine(s string) bool {
 			return true
 		}
 	}
-	t := strings.ToLower(s)
-	for _, word := range []string{"street", "st", "avenue", "ave", "road", "rd", "drive", "dr", "lane", "ln", "way", "place", "pl", "court", "ct", "boulevard", "blvd"} {
-		if strings.Contains(t, word) {
+	// Whole words only. Substring matching treated any word containing "st",
+	// "dr", "ln" and friends as a street — "Winston-Salem" and "Redmond" both
+	// qualified — which is how map labels passed for addresses.
+	for _, word := range strings.Fields(strings.ToLower(s)) {
+		if streetWords[strings.Trim(word, ".,'\"()")] {
 			return true
 		}
 	}

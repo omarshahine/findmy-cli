@@ -74,7 +74,8 @@ findmy people
 findmy people --json
 findmy people --no-log
 
-# Click a row and OCR the detail pane (precise address).
+# Read one matching person. `--zoom` clicks the row and OCRs the detail pane
+# for a street address — see the note on macOS 26+ under Limitations.
 findmy person "Omar Shahine"
 findmy person "Omar Shahine" --json
 
@@ -173,6 +174,14 @@ diagnostic — TCC denied is more common than missing display.
 
 ## Limitations
 
+- **`--zoom` yields no street address on macOS 26 and later.** macOS 26
+  replaced FindMy's split view with a floating sidebar over a full-window map.
+  A row click no longer opens a detail pane; it opens a callout pinned to the
+  map carrying the same coarse location and staleness the sidebar already
+  showed. There is nothing more precise on screen to OCR, so `--zoom` prints a
+  warning to stderr and leaves `precise_address` unset rather than guessing.
+  Everything else — `people`, `devices`, `items`, `watch`, `log` — is
+  unaffected. Tracked in [#13](https://github.com/omarshahine/findmy-cli/issues/13).
 - **The display must be awake and unlocked.** WindowServer stops compositing
   when the display sleeps, so `screencapture` returns a 99 KB all-black PNG.
   The CLI detects this and tells you to wake the keyboard. There is no
