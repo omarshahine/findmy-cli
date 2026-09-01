@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -360,7 +361,7 @@ func runDevice(args []string) {
 			os.Exit(1)
 		}
 		detailShot := filepath.Join(tmpDir(), "device-detail.png")
-		must(enrichWithDetailPane(w, shot, detailShot, nameLine, sidebarRightPx, opts.keep, func(precise, city, region, postal string) {
+		must(enrichWithDetailPane(w, shot, detailShot, nameLine, sidebarRightPx, opts.keep, match.Name, func(precise, city, region, postal string) {
 			match.PreciseAddress = precise
 			match.City = city
 			match.Region = region
@@ -728,7 +729,7 @@ func runPerson(args []string) {
 			os.Exit(1)
 		}
 		detailShot := filepath.Join(tmpDir(), "person-detail.png")
-		must(enrichWithDetailPane(w, shot, detailShot, nameLine, sidebarRightPx, opts.keep, func(precise, city, region, postal string) {
+		must(enrichWithDetailPane(w, shot, detailShot, nameLine, sidebarRightPx, opts.keep, match.Name, func(precise, city, region, postal string) {
 			match.PreciseAddress = precise
 			match.City = city
 			match.Region = region
@@ -785,7 +786,7 @@ func findSidebarNameLine(lines []findmy.TextLine, sidebarRightPx, textColMinPx i
 	return findmy.TextLine{}, false
 }
 
-func enrichWithDetailPane(w *findmy.Window, sidebarShotPath, detailShotPath string, clickLine findmy.TextLine, sidebarRightPx int, keep bool, apply func(precise, city, region, postal string)) error {
+func enrichWithDetailPane(w *findmy.Window, sidebarShotPath, detailShotPath string, clickLine findmy.TextLine, sidebarRightPx int, keep bool, entityName string, apply func(precise, city, region, postal string)) error {
 	clickX := clickLine.X + clickLine.Width/2
 	clickY := clickLine.Y + clickLine.Height/2
 	screenX, screenY := windowPointFromImagePoint(w, sidebarShotPath, clickX, clickY)
@@ -804,11 +805,27 @@ func enrichWithDetailPane(w *findmy.Window, sidebarShotPath, detailShotPath stri
 	if err != nil {
 		return err
 	}
-	precise, city, region, postal := findmy.ExtractDetailPaneAddress(lines, sidebarRightPx)
+	precise, city, region, postal, err := findmy.ExtractDetailPaneAddress(lines, sidebarRightPx, entityName)
+	if err != nil && !errors.Is(err, findmy.ErrNoDetailPane) {
+		return err
+	}
 	if precise != "" || city != "" || region != "" || postal != "" {
 		apply(precise, city, region, postal)
+		return nil
 	}
+	// Not fatal: the coarse sidebar reading is still good, and callers pipe
+	// --json into scripts that a non-zero exit would break. Warn loudly
+	// instead — the one thing --zoom must never do is invent an address.
+	warnNoPreciseAddress(entityName)
 	return nil
+}
+
+func warnNoPreciseAddress(entityName string) {
+	fmt.Fprintf(os.Stderr, "warning: --zoom read no precise address for %q.\n", entityName)
+	fmt.Fprintln(os.Stderr, "         macOS 26 replaced FindMy's split view with a floating sidebar over a")
+	fmt.Fprintln(os.Stderr, "         full-window map. Selecting a row now opens a map callout carrying the")
+	fmt.Fprintln(os.Stderr, "         same coarse location as the sidebar, not a street address, so there is")
+	fmt.Fprintln(os.Stderr, "         nothing more precise on screen to read. See issue #13.")
 }
 
 func zoomDelay() time.Duration {
@@ -823,14 +840,21 @@ func zoomDelay() time.Duration {
 }
 
 // pixelLayout returns the sidebar-right and name-column-left thresholds in
-// image pixels. The FindMy sidebar is ~340pt wide; the avatar column is
-// ~100pt with the avatar circle centered around 50pt, so an 80pt cutoff
-// drops centered avatar OCR fragments while admitting real name/location
-// text that begins around 90pt. We use a float scale because some displays
-// (e.g. a 4K dummy plug) report non-integer pixel-per-point ratios.
+// image pixels. The FindMy sidebar is ~340pt wide; the avatar column holds a
+// circle centered around 40pt, so a 60pt cutoff drops centered avatar OCR
+// fragments while admitting real name/location text.
+//
+// 60pt rather than 80pt because macOS 26 replaced the split view with a
+// floating sidebar panel inset from the window edge, tightening the avatar
+// column: names now start around 66pt from the window's left edge (measured
+// on 26.6.2), where an 80pt cutoff would drop every row. The older split-view
+// layout put names around 90pt, so 60pt admits both.
+//
+// We use a float scale because some displays (e.g. a 4K dummy plug) report
+// non-integer pixel-per-point ratios.
 func pixelLayout(w *findmy.Window, imagePath string) (sidebarRightPx, textColMinPx int) {
 	scale := imageScale(w, imagePath)
-	return int(340 * scale), int(80 * scale)
+	return int(340 * scale), int(60 * scale)
 }
 
 func windowPointFromImagePoint(w *findmy.Window, imagePath string, px, py int) (int, int) {
