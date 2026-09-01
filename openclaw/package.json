@@ -68,17 +68,51 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "//": [
+    "openclaw is the HOST runtime, not something this plugin ships. It belongs in",
+    "peerDependencies -- openclaw's own packaging guide prescribes exactly that",
+    "(docs/snippets/plugin-publish/minimal-package.json) -- and is marked optional so",
+    "npm does not auto-install a copy of the host into a consumer's tree. Declaring it",
+    "under `dependencies`, as this package did until 2026-09-01, put openclaw's entire",
+    "dependency tree in this repo's lockfile at RUNTIME scope and attributed every",
+    "advisory in it to this repo: 23 open Dependabot alerts for code no consumer of",
+    "findmy-cli ever installs.",
+    "",
+    "The top-level `import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry'`",
+    "in src/index.ts still resolves at runtime: OpenClaw refuses to npm-install a",
+    "registry copy of the host into a managed plugin project (a stale host copy corrupts",
+    "peer resolution) and instead reasserts a plugin-local node_modules/openclaw link for",
+    "packages that declare the host peer. See openclaw docs plugins/dependency-resolution.md.",
+    "",
+    "The devDependencies entry is here for TYPES and nothing else. definePluginEntry is a",
+    "typed import, so `npm run typecheck` fails with TS2307 without it (and `api` in",
+    "src/index.ts degrades to implicit any). It is NOT needed to build -- tsup externalizes",
+    "the peer -- and NOT needed by `plugin:ci`, which runs the inspector with --mock-sdk;",
+    "both were verified to pass with openclaw absent. Managed installs run",
+    "`npm install --omit=dev --omit=peer`, so neither entry reaches a consumer.",
+    "",
+    "Do not move openclaw back into `dependencies`."
+  ],
   "dependencies": {
-    "@sinclair/typebox": "^0.34.52",
-    "openclaw": "^2026.7.1"
+    "@sinclair/typebox": "^0.34.52"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.6.5"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
+    "openclaw": "^2026.8.1",
     "tsup": "^8.5.0",
     "typescript": "^7.0.2"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --out-dir dist --clean --target node20",
+    "typecheck": "tsc --noEmit",
     "plugin:check": "npx --yes @openclaw/plugin-inspector inspect --no-openclaw",
     "plugin:ci": "npx --yes @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute",
     "prepack": "npm run build"

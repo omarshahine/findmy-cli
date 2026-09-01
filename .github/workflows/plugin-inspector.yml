@@ -19,6 +19,10 @@ jobs:
           cache: npm
           cache-dependency-path: openclaw/package-lock.json
       - run: npm ci --force
+      # Typechecks src/index.ts against openclaw's SDK types. This is what makes
+      # the dev-only `openclaw` entry in package.json load-bearing -- see the
+      # "//" note there before removing either.
+      - run: npm run typecheck
       - run: npx @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute
       - uses: actions/upload-artifact@v7
         if: always()
