@@ -19,6 +19,14 @@ updates:
     schedule:
       interval: monthly
     groups:
+      # ⚠️ Security updates are NOT grouped by default, so a repo with several
+      # advisories in one lockfile gets several PRs that all edit it. Merging
+      # any one invalidates the rest, `@dependabot recreate` rebuilds them, and
+      # the next merge breaks them again. This repo was stuck in that loop.
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
       production:
         dependency-type: production
       development:
