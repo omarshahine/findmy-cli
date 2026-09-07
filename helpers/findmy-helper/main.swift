@@ -125,6 +125,41 @@ struct Permissions: Encodable {
 // is unreliable for CLI binaries (TCC entries can be stale across rebuilds),
 // so when it reports false we exercise the permission via SCShareableContent —
 // the only definitive probe.
+func cmdScroll(_ args: [String]) {
+    guard args.count >= 3, let x = Double(args[0]), let y = Double(args[1]), let dy = Int32(args[2]) else {
+        die("usage: findmy-helper scroll <x> <y> <dy> (dy: negative=down, positive=up)")
+    }
+    let pt = CGPoint(x: x, y: y)
+    let src = CGEventSource(stateID: .hidSystemState)
+
+    // Move the pointer first: scroll events go to whatever is under it.
+    let move = CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: pt, mouseButton: .left)
+    move?.post(tap: .cghidEventTap)
+    usleep(100_000)
+
+    // Catalyst apps ignore discrete scroll-wheel events, so send a phased
+    // continuous gesture -- what a trackpad produces -- in several steps.
+    let pixelDy = Double(dy) * 30.0
+    let steps = 5
+    let stepDy = pixelDy / Double(steps)
+
+    for i in 0..<steps {
+        let scroll = CGEvent(scrollWheelEvent2Source: src, units: .pixel, wheelCount: 1, wheel1: Int32(stepDy), wheel2: 0, wheel3: 0)
+        // Phase: 1 = began, 2 = changed, 4 = ended.
+        if i == 0 {
+            scroll?.setIntegerValueField(.scrollWheelEventScrollPhase, value: 1)
+        } else if i == steps - 1 {
+            scroll?.setIntegerValueField(.scrollWheelEventScrollPhase, value: 4)
+        } else {
+            scroll?.setIntegerValueField(.scrollWheelEventScrollPhase, value: 2)
+        }
+        scroll?.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        scroll?.post(tap: .cghidEventTap)
+        usleep(20_000)
+    }
+    print("{\"ok\":true}")
+}
+
 func cmdPermissions(_ args: [String]) {
     var screenRecording = CGPreflightScreenCaptureAccess()
     if !screenRecording {
@@ -146,13 +181,14 @@ func cmdPermissions(_ args: [String]) {
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let sub = args.first else {
-    die("usage: findmy-helper {window|ocr|click|permissions} ...")
+    die("usage: findmy-helper {window|ocr|click|scroll|permissions} ...")
 }
 let rest = Array(args.dropFirst())
 switch sub {
 case "window": cmdWindow(rest)
 case "ocr": cmdOCR(rest)
 case "click": cmdClick(rest)
+case "scroll": cmdScroll(rest)
 case "permissions": cmdPermissions(rest)
 default: die("unknown subcommand: \(sub)")
 }

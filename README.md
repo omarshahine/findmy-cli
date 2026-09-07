@@ -98,6 +98,41 @@ findmy item "AirPods Pro" --json
 # Query the SQLite history ledger populated by people/devices runs.
 findmy log "Omar Shahine" --since=24h
 findmy log "Omar's iPhone" --kind=devices --limit=10 --json
+
+### Ring a device
+
+`ring` finds the device by scrolling the Devices sidebar, opens its card on the
+map, and clicks **Play Sound**. It is a dry run unless you pass `--confirm`, so
+you can check it found the right device before anything makes noise.
+
+```bash
+findmy ring "Omar's iPhone"             # locates the button, does not click
+findmy ring "Omar's iPhone" --confirm   # actually plays the sound
+```
+
+Ringing needs Accessibility as well as Screen Recording, since it synthesizes
+clicks. It activates Find My and switches back to the app you were in when it
+finishes.
+
+### Aliases
+
+Aliases save typing the exact device name, and live in
+`~/.config/findmy-cli/aliases.json`.
+
+```bash
+findmy alias phone "Omar's iPhone"   # set
+findmy alias                         # list
+findmy alias --delete phone          # remove
+findmy ring phone --confirm          # any command that takes a device accepts one
+```
+
+`findmy phone` is the shorthand: with no argument it rings whatever the `phone`
+alias points at.
+
+```bash
+findmy phone --confirm
+```
+
 ```
 
 Successful `findmy people`, `findmy devices`, and `findmy items` runs append parsed sidebar
