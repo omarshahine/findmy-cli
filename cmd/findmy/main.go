@@ -39,6 +39,12 @@ func main() {
 		runWatch(os.Args[2:])
 	case "log":
 		runLog(os.Args[2:])
+	case "ring":
+		runRing(os.Args[2:])
+	case "phone":
+		runPhone(os.Args[2:])
+	case "alias":
+		runAlias(os.Args[2:])
 	case "-h", "--help", "help":
 		usage()
 	default:
@@ -59,6 +65,9 @@ Usage:
   findmy item    <name> [--json] [--keep]
   findmy watch   <people|devices|items> [--interval=5m] [--diff] [--json] [--once]
   findmy log     <name> [--kind=people|devices|items] [--since=DURATION] [--until=DURATION] [--limit=N] [--json]
+  findmy ring    <device|alias> [--confirm]
+  findmy phone   [device|alias] [--confirm]        (defaults to the "phone" alias)
+  findmy alias   [<name> <device> | --delete <name>]
 
 Flags:
   --json           emit JSON instead of a human table
@@ -67,15 +76,17 @@ Flags:
   --zoom           click matched row and OCR the detail pane
   --interval=DUR   watch polling interval (default 5m)
   --diff           watch: emit only changed rows (default on for --json, off for human)
-  --once           watch: poll once and exit`)
+  --once           watch: poll once and exit
+  --confirm        ring: actually play the sound (without it, dry run)`)
 	os.Exit(2)
 }
 
 type runOpts struct {
-	json  bool
-	keep  bool
-	zoom  bool
-	noLog bool
+	json    bool
+	keep    bool
+	zoom    bool
+	noLog   bool
+	confirm bool
 }
 
 // parseOpts splits args into known flags and positional args. Go's flag
@@ -95,6 +106,8 @@ func parseOpts(args []string) (runOpts, []string) {
 			o.noLog = true
 		case "--zoom", "-zoom":
 			o.zoom = true
+		case "--confirm", "-confirm":
+			o.confirm = true
 		default:
 			positional = append(positional, a)
 		}
@@ -897,6 +910,128 @@ func cleanup(path string, keep bool) {
 	if !keep {
 		_ = os.Remove(path)
 	}
+}
+
+// ring locates a device by scrolling the sidebar and plays a sound on it.
+// Ringing is loud and happens on a device that may not be in the room, so it
+// is dry-run by default: without --confirm we find the button and report
+// where it is, but never click it.
+func ring(target string, opts runOpts) {
+	raw := strings.TrimSpace(target)
+	if raw == "" {
+		fmt.Fprintln(os.Stderr, "usage: findmy ring <device|alias> [--confirm]")
+		os.Exit(2)
+	}
+	resolved := findmy.ResolveAlias(raw)
+	if resolved != raw {
+		fmt.Fprintf(os.Stderr, "%s -> %s\n", raw, resolved)
+	}
+
+	if !opts.confirm {
+		fmt.Fprintln(os.Stderr, "Dry run: locating the Play Sound button without clicking it.")
+		fmt.Fprintln(os.Stderr, "Add --confirm to actually make the device play a sound.")
+	}
+
+	w, err := findmy.PrepareDevices()
+	must(err)
+
+	match, err := findmy.FindDeviceByScroll(w, resolved, tmpDir())
+	must(err)
+	fmt.Fprintf(os.Stderr, "Found: %s\n", match.Name)
+
+	err = findmy.RingDevice(w, match, tmpDir(), !opts.confirm)
+	_ = findmy.SwitchTab(findmy.GetAppStrings().PeopleTab)
+	findmy.RestoreUserSpace()
+	must(err)
+
+	if opts.confirm {
+		fmt.Printf("Ringing %s...\n", match.Name)
+	} else {
+		fmt.Println("Dry run complete. Add --confirm to ring.")
+	}
+}
+
+func runRing(args []string) {
+	opts, rest := parseOpts(args)
+	ring(strings.Join(rest, " "), opts)
+}
+
+// runPhone is the shorthand: `findmy phone` rings whatever the "phone" alias
+// points at, so the common case needs no device name.
+func runPhone(args []string) {
+	opts, rest := parseOpts(args)
+	target := strings.Join(rest, " ")
+	if strings.TrimSpace(target) == "" {
+		target = findmy.ResolveAlias("phone")
+		if target == "phone" {
+			fmt.Fprintln(os.Stderr, "no \"phone\" alias set. Run: findmy alias phone \"Omar's iPhone\"")
+			os.Exit(2)
+		}
+	}
+	ring(target, opts)
+}
+
+// runAlias manages the name shortcuts in ~/.config/findmy-cli/aliases.json.
+func runAlias(args []string) {
+	_, rest := parseOpts(args)
+	m := findmy.LoadAliases()
+
+	for i, a := range rest {
+		if a != "--delete" && a != "-delete" {
+			continue
+		}
+		if i+1 >= len(rest) {
+			fmt.Fprintln(os.Stderr, "usage: findmy alias --delete <name>")
+			os.Exit(2)
+		}
+		name := rest[i+1]
+		key := strings.ToLower(name)
+		found := false
+		for k := range m {
+			if strings.ToLower(k) == key {
+				delete(m, k)
+				found = true
+			}
+		}
+		if !found {
+			fmt.Fprintf(os.Stderr, "alias %q not found\n", name)
+			os.Exit(1)
+		}
+		must(findmy.SaveAliases(m))
+		fmt.Printf("deleted alias %q\n", name)
+		return
+	}
+
+	if len(rest) == 0 {
+		if len(m) == 0 {
+			fmt.Fprintln(os.Stderr, "no aliases set. Add one: findmy alias phone \"Omar's iPhone\"")
+			return
+		}
+		names := make([]string, 0, len(m))
+		for k := range m {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			fmt.Printf("%s -> %s\n", k, m[k])
+		}
+		return
+	}
+
+	if len(rest) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: findmy alias <name> <device>")
+		os.Exit(2)
+	}
+	name := rest[0]
+	device := strings.Join(rest[1:], " ")
+	for k := range m {
+		if strings.EqualFold(k, name) {
+			delete(m, k)
+		}
+	}
+	m[name] = device
+	must(findmy.SaveAliases(m))
+	fmt.Printf("%s -> %s\n", name, device)
 }
 
 func must(err error) {
