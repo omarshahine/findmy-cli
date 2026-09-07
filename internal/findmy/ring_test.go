@@ -95,3 +95,62 @@ func TestLoadAliasesSurvivesCorruptFile(t *testing.T) {
 		t.Fatalf("got %v, want an empty map", got)
 	}
 }
+
+func TestMatchSidebarDevicePrefersExactOverSubstring(t *testing.T) {
+	// "Omar's iPhone 15" sits above the exact match; the exact one must win.
+	lines := []TextLine{
+		{Text: "Omar's iPhone 15", X: 60, Y: 100, Width: 200},
+		{Text: "Omar's iPhone", X: 60, Y: 200, Width: 180},
+	}
+	got := matchSidebarDevice(lines, "Omar's iPhone", 680)
+	if got == nil || got.Name != "Omar's iPhone" || got.NameY != 200 {
+		t.Fatalf("got %+v, want the exact row at y=200", got)
+	}
+}
+
+func TestMatchSidebarDeviceFallsBackToSubstring(t *testing.T) {
+	lines := []TextLine{{Text: "Omar's iPhone 15", X: 60, Y: 100, Width: 200}}
+	got := matchSidebarDevice(lines, "iphone", 680)
+	if got == nil || got.Name != "Omar's iPhone 15" {
+		t.Fatalf("got %+v, want the substring row", got)
+	}
+}
+
+func TestMatchSidebarDeviceIgnoresDetailPane(t *testing.T) {
+	// Same name, but rendered in the card to the right of the sidebar.
+	lines := []TextLine{{Text: "Omar's iPhone", X: 900, Y: 100, Width: 180}}
+	if got := matchSidebarDevice(lines, "Omar's iPhone", 680); got != nil {
+		t.Fatalf("got %+v, want no sidebar match", got)
+	}
+}
+
+func TestMatchSidebarDeviceEmptyTargets(t *testing.T) {
+	lines := []TextLine{{Text: "Omar's iPhone", X: 60, Width: 180}}
+	if got := matchSidebarDevice(lines, "   ", 680); got != nil {
+		t.Fatalf("got %+v, want nil for a blank target", got)
+	}
+}
+
+func TestCardShowsDeviceRequiresTheCardNotTheSidebar(t *testing.T) {
+	sidebarOnly := []TextLine{{Text: "Omar's iPhone", X: 60, Width: 180}}
+	if cardShowsDevice(sidebarOnly, "Omar's iPhone", 680) {
+		t.Fatal("a sidebar row must not count as the card being open")
+	}
+
+	cardOpen := []TextLine{
+		{Text: "Omar's iPhone", X: 60, Width: 180},
+		{Text: "Omar's iPhone", X: 900, Width: 180},
+	}
+	if !cardShowsDevice(cardOpen, "Omar's iPhone", 680) {
+		t.Fatal("card text to the right of the sidebar should count")
+	}
+}
+
+// The fast path exists to skip re-navigation. It must not fire when the open
+// card belongs to a different device, or a ring lands on the wrong one.
+func TestCardShowsDeviceRejectsAnotherDevicesCard(t *testing.T) {
+	lines := []TextLine{{Text: "Sarah's iPad", X: 900, Width: 160}, {Text: "Play Sound", X: 950}}
+	if cardShowsDevice(lines, "Omar's iPhone", 680) {
+		t.Fatal("another device's open card must not satisfy the fast path")
+	}
+}

@@ -35,13 +35,18 @@ type DeviceHit struct {
 // ring can hand the display back instead of leaving FindMy in the user's face.
 var previousApp string
 
-func rememberFrontApp() string {
+// RememberFrontApp records the frontmost app so RestoreUserSpace can return to
+// it. It must be called BEFORE anything activates Find My -- PrepareDevices
+// already does, and reading it afterwards just records Find My itself, which
+// makes the restore a silent no-op.
+func RememberFrontApp() {
 	out, err := exec.Command("osascript", "-e",
 		`tell application "System Events" to get bundle identifier of first process whose frontmost is true`).Output()
 	if err != nil {
-		return ""
+		previousApp = ""
+		return
 	}
-	return strings.TrimSpace(string(out))
+	previousApp = strings.TrimSpace(string(out))
 }
 
 // RestoreUserSpace reactivates whatever was frontmost before the ring, which
@@ -134,13 +139,42 @@ func findPlaySoundButton(lines []TextLine) *TextLine {
 	return nil
 }
 
+// matchSidebarDevice picks the row for target out of one OCR frame. An exact
+// name wins over a substring anywhere in the frame: "Omar's iPhone" and
+// "Omar's iPhone 15" both contain the former, and ringing whichever happens to
+// sit higher in the sidebar is not a coin flip worth taking.
+func matchSidebarDevice(lines []TextLine, target string, sidebarRightPx int) *DeviceHit {
+	targetLower := strings.ToLower(strings.TrimSpace(target))
+	if targetLower == "" {
+		return nil
+	}
+	var partial *DeviceHit
+	for _, l := range lines {
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue // detail pane, not the sidebar
+		}
+		txt := strings.TrimSpace(l.Text)
+		if txt == "" {
+			continue
+		}
+		lower := strings.ToLower(txt)
+		hit := &DeviceHit{Name: txt, NameX: l.X, NameY: l.Y}
+		if lower == targetLower {
+			return hit
+		}
+		if partial == nil && strings.Contains(lower, targetLower) {
+			partial = hit
+		}
+	}
+	return partial
+}
+
 // FindDeviceByScroll scrolls the Devices sidebar from the top, OCRing each
-// frame, until a row contains target. The list is virtualized, so a device
+// frame, until a row matches target. The list is virtualized, so a device
 // below the fold is invisible to a single capture -- scrolling is the only
 // way to reach it.
 func FindDeviceByScroll(w *Window, target, tmpDir string) (*DeviceHit, error) {
-	targetLower := strings.ToLower(strings.TrimSpace(target))
-	if targetLower == "" {
+	if strings.TrimSpace(target) == "" {
 		return nil, fmt.Errorf("no device name given")
 	}
 
@@ -153,9 +187,15 @@ func FindDeviceByScroll(w *Window, target, tmpDir string) (*DeviceHit, error) {
 	time.Sleep(500 * time.Millisecond)
 
 	shot := filepath.Join(tmpDir, "scroll-find.png")
+	scale := 0.0
 	for pass := 0; pass < 20; pass++ {
 		if err := Capture(w, shot); err != nil {
 			return nil, fmt.Errorf("capture: %w", err)
+		}
+		// Read the scale off the file while it still exists; OCR and removal
+		// both come after.
+		if scale == 0 {
+			scale = imageScaleFor(w, shot)
 		}
 		lines, err := OCR(shot)
 		_ = os.Remove(shot)
@@ -163,15 +203,8 @@ func FindDeviceByScroll(w *Window, target, tmpDir string) (*DeviceHit, error) {
 			return nil, fmt.Errorf("ocr: %w", err)
 		}
 
-		sidebarRightPx := int(340 * imageScaleFor(w, shot))
-		for _, l := range lines {
-			if l.X+l.Width/2 >= sidebarRightPx {
-				continue // detail pane, not the sidebar
-			}
-			txt := strings.TrimSpace(l.Text)
-			if strings.Contains(strings.ToLower(txt), targetLower) {
-				return &DeviceHit{Name: txt, NameX: l.X, NameY: l.Y}, nil
-			}
+		if hit := matchSidebarDevice(lines, target, int(340*scale)); hit != nil {
+			return hit, nil
 		}
 
 		_ = Scroll(sidebarX, sidebarY, -5)
@@ -194,7 +227,6 @@ func RingDevice(w *Window, device *DeviceHit, tmpDir string, dryRun bool) error 
 		return err
 	}
 
-	previousApp = rememberFrontApp()
 	_ = Activate()
 	// Catalyst only routes synthetic clicks to a frontmost process.
 	_ = exec.Command("osascript", "-e",
@@ -208,9 +240,11 @@ func RingDevice(w *Window, device *DeviceHit, tmpDir string, dryRun bool) error 
 		_ = os.Remove(shot)
 	}
 
-	// Fast path: the card may already be open from a previous run.
+	// Fast path: the card may already be open from a previous run -- but only
+	// if it is THIS device's card. A card left open for another device shows
+	// its own Play Sound button, and clicking that rings the wrong thing.
 	if lines, err := captureAndOCR(w, tmpDir); err == nil {
-		if btn := findPlaySoundButton(lines); btn != nil {
+		if btn := findPlaySoundButton(lines); btn != nil && cardShowsDevice(lines, device.Name, int(340*scale)) {
 			return clickOrDryRun(w, btn, scale, dryRun)
 		}
 	}
@@ -248,6 +282,26 @@ func RingDevice(w *Window, device *DeviceHit, tmpDir string, dryRun bool) error 
 		return fmt.Errorf("'Play Sound' button not found -- the device may be offline, or its map pin was not clickable")
 	}
 	return clickOrDryRun(w, button, scale, dryRun)
+}
+
+// cardShowsDevice reports whether the open detail card names this device. The
+// card renders to the right of the sidebar, so sidebar rows -- which always
+// include the requested name once we have scrolled to it -- must not count as
+// proof that the card itself belongs to that device.
+func cardShowsDevice(lines []TextLine, name string, sidebarRightPx int) bool {
+	want := strings.ToLower(strings.TrimSpace(name))
+	if want == "" {
+		return false
+	}
+	for _, l := range lines {
+		if l.X < sidebarRightPx {
+			continue // sidebar, not the card
+		}
+		if strings.Contains(strings.ToLower(strings.TrimSpace(l.Text)), want) {
+			return true
+		}
+	}
+	return false
 }
 
 // clickOrDryRun clicks the button, or reports where it would have clicked.

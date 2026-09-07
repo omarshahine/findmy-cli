@@ -916,7 +916,7 @@ func cleanup(path string, keep bool) {
 // Ringing is loud and happens on a device that may not be in the room, so it
 // is dry-run by default: without --confirm we find the button and report
 // where it is, but never click it.
-func ring(target string, opts runOpts) {
+func ring(target string, opts runOpts) error {
 	raw := strings.TrimSpace(target)
 	if raw == "" {
 		fmt.Fprintln(os.Stderr, "usage: findmy ring <device|alias> [--confirm]")
@@ -932,28 +932,43 @@ func ring(target string, opts runOpts) {
 		fmt.Fprintln(os.Stderr, "Add --confirm to actually make the device play a sound.")
 	}
 
+	// Take this before PrepareDevices, which activates Find My. Read it after
+	// and we would just record Find My and never hand the display back.
+	findmy.RememberFrontApp()
+	// Every path below leaves Find My frontmost and on the Devices tab, errors
+	// included. ring therefore returns its errors rather than calling must:
+	// must exits the process, and os.Exit does not run deferred functions.
+	defer func() {
+		_ = findmy.SwitchTab(findmy.GetAppStrings().PeopleTab)
+		findmy.RestoreUserSpace()
+	}()
+
 	w, err := findmy.PrepareDevices()
-	must(err)
+	if err != nil {
+		return err
+	}
 
 	match, err := findmy.FindDeviceByScroll(w, resolved, tmpDir())
-	must(err)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(os.Stderr, "Found: %s\n", match.Name)
 
-	err = findmy.RingDevice(w, match, tmpDir(), !opts.confirm)
-	_ = findmy.SwitchTab(findmy.GetAppStrings().PeopleTab)
-	findmy.RestoreUserSpace()
-	must(err)
+	if err := findmy.RingDevice(w, match, tmpDir(), !opts.confirm); err != nil {
+		return err
+	}
 
 	if opts.confirm {
 		fmt.Printf("Ringing %s...\n", match.Name)
 	} else {
 		fmt.Println("Dry run complete. Add --confirm to ring.")
 	}
+	return nil
 }
 
 func runRing(args []string) {
 	opts, rest := parseOpts(args)
-	ring(strings.Join(rest, " "), opts)
+	must(ring(strings.Join(rest, " "), opts))
 }
 
 // runPhone is the shorthand: `findmy phone` rings whatever the "phone" alias
@@ -968,7 +983,7 @@ func runPhone(args []string) {
 			os.Exit(2)
 		}
 	}
-	ring(target, opts)
+	must(ring(target, opts))
 }
 
 // runAlias manages the name shortcuts in ~/.config/findmy-cli/aliases.json.
