@@ -148,20 +148,31 @@ func SwitchTab(name string) error {
 
 func MainWindow() (*Window, error) {
 	ls := GetAppStrings()
-	out, err := runHelper("window", "--owner", ls.WindowOwner)
-	if err != nil {
-		return nil, fmt.Errorf("helper window: %w", err)
-	}
-	var wins []Window
-	if err := json.Unmarshal(out, &wins); err != nil {
-		return nil, fmt.Errorf("decode windows: %w", err)
-	}
-	for _, w := range wins {
-		if w.Layer == 0 && w.OnScreen && w.Height > 100 {
-			return &w, nil
+	for _, owner := range windowOwnerCandidates(ls.WindowOwner) {
+		out, err := runHelper("window", "--owner", owner)
+		if err != nil {
+			return nil, fmt.Errorf("helper window: %w", err)
+		}
+		var wins []Window
+		if err := json.Unmarshal(out, &wins); err != nil {
+			return nil, fmt.Errorf("decode windows: %w", err)
+		}
+		for _, w := range wins {
+			if w.Layer == 0 && w.OnScreen && w.Height > 100 {
+				return &w, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("no visible %s window (open the app first)", ls.WindowOwner)
+}
+
+// windowOwnerCandidates accounts for macOS builds where Spotlight reports the
+// bundle name "FindMy" while CGWindowList reports the visible owner as "Find My".
+func windowOwnerCandidates(owner string) []string {
+	if owner == "FindMy" {
+		return []string{"FindMy", "Find My"}
+	}
+	return []string{owner}
 }
 
 // Capture writes the FindMy window's content to dest using `screencapture -l`,
