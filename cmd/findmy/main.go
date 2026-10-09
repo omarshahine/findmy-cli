@@ -772,6 +772,7 @@ func runPerson(args []string) {
 
 func findSidebarNameLine(lines []findmy.TextLine, sidebarRightPx, textColMinPx int, name string) (findmy.TextLine, bool) {
 	target := strings.ToLower(strings.TrimSpace(name))
+	textColMinPx = findmy.DetectTextColumnMin(lines, sidebarRightPx, 0, textColMinPx)
 	var contains *findmy.TextLine
 	for i := range lines {
 		l := lines[i]

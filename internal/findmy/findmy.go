@@ -139,11 +139,16 @@ func Activate() error {
 
 func SwitchTab(name string) error {
 	ls := GetAppStrings()
+	// Address the menu through its menu bar item: macOS 27 no longer resolves
+	// `menu "View" of menu bar 1`, and the indirect form works on older releases.
 	script := fmt.Sprintf(
-		`tell application "System Events" to tell process "FindMy" to click menu item %q of menu %q of menu bar 1`,
+		`tell application "System Events" to tell process "FindMy" to click menu item %q of menu 1 of menu bar item %q of menu bar 1`,
 		name, ls.ViewMenu,
 	)
-	return exec.Command("osascript", "-e", script).Run()
+	if out, err := exec.Command("osascript", "-e", script).CombinedOutput(); err != nil {
+		return fmt.Errorf("switch to %s tab: %w: %s", name, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func MainWindow() (*Window, error) {
@@ -277,7 +282,11 @@ func prepareTab(tab string) (*Window, error) {
 	time.Sleep(900 * time.Millisecond)
 	frontScript := `tell application "System Events" to tell process "FindMy" to set frontmost to true`
 	_ = exec.Command("osascript", "-e", frontScript).Run()
-	_ = SwitchTab(tab)
+	// A failed switch used to be ignored, which silently parsed whichever tab
+	// was already showing (People returning the Devices list).
+	if err := SwitchTab(tab); err != nil {
+		return nil, err
+	}
 	time.Sleep(1100 * time.Millisecond)
 	return MainWindow()
 }
@@ -331,31 +340,7 @@ func RequireSidebarVisible(lines []TextLine, sidebarRightPx int, tabName string)
 // dynamic bounds handle compact Catalyst layouts where map labels would
 // otherwise bleed into the fixed cutoff.
 func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
-	rows := make([]TextLine, 0, len(lines))
-	effectiveSidebarRightPx := detectSidebarRight(lines, sidebarRightPx)
-	rowStartY := detectSidebarRowStartY(lines, effectiveSidebarRightPx)
-	for _, l := range lines {
-		if strings.TrimSpace(l.Text) == "" {
-			continue
-		}
-		if l.X+l.Width/2 >= effectiveSidebarRightPx {
-			continue
-		}
-		if l.Y < rowStartY {
-			continue
-		}
-		if l.X < textColMinPx {
-			continue
-		}
-		rows = append(rows, l)
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Y == rows[j].Y {
-			return rows[i].X < rows[j].X
-		}
-		return rows[i].Y < rows[j].Y
-	})
-	rows = mergeWrappedContinuations(rows)
+	rows := sidebarRows(lines, sidebarRightPx, textColMinPx)
 
 	skip := GetAppStrings().SkipWords()
 
@@ -382,6 +367,82 @@ func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
 		current.Staleness = stale
 	}
 	return people
+}
+
+// sidebarRows returns the OCR lines that belong to sidebar rows, sorted top to
+// bottom with wrapped continuations merged: inside the sidebar, below the tab
+// pills, and right of the icon column.
+func sidebarRows(lines []TextLine, sidebarRightPx, textColMinPx int) []TextLine {
+	rightPx := detectSidebarRight(lines, sidebarRightPx)
+	rowStartY := detectSidebarRowStartY(lines, rightPx)
+	colMinPx := DetectTextColumnMin(lines, rightPx, rowStartY, textColMinPx)
+	rows := make([]TextLine, 0, len(lines))
+	for _, l := range lines {
+		if strings.TrimSpace(l.Text) == "" {
+			continue
+		}
+		if l.X+l.Width/2 >= rightPx {
+			continue
+		}
+		if l.Y < rowStartY {
+			continue
+		}
+		if l.X < colMinPx {
+			continue
+		}
+		rows = append(rows, l)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Y == rows[j].Y {
+			return rows[i].X < rows[j].X
+		}
+		return rows[i].Y < rows[j].Y
+	})
+	return mergeWrappedContinuations(rows)
+}
+
+// DetectTextColumnMin returns the left cutoff (image pixels) for sidebar row
+// text. The fixed cutoff (60pt) sat right on macOS 27's text column (~59pt),
+// so Vision's few-pixel jitter in left edges dropped about half the lines and
+// split names from their locations. The text column is found as the left edge
+// shared by the most lines (within 6px), and the cutoff sits 12px left of it.
+// It never moves right of the fixed cutoff, and never below four fifths of it,
+// which keeps the icon column (ending near 48pt) excluded.
+func DetectTextColumnMin(lines []TextLine, sidebarRightPx, rowStartY, fallbackPx int) int {
+	floorPx := fallbackPx * 4 / 5
+	var xs []int
+	for _, l := range lines {
+		if strings.TrimSpace(l.Text) == "" || l.Y < rowStartY || l.X < floorPx {
+			continue
+		}
+		if l.X+l.Width/2 >= sidebarRightPx {
+			continue
+		}
+		xs = append(xs, l.X)
+	}
+	bestX, bestCount := 0, 0
+	for _, x := range xs {
+		n := 0
+		for _, other := range xs {
+			if abs(other-x) <= 6 {
+				n++
+			}
+		}
+		if n > bestCount || (n == bestCount && x < bestX) {
+			bestX, bestCount = x, n
+		}
+	}
+	if bestCount < 2 {
+		return fallbackPx
+	}
+	cut := bestX - 12
+	if cut > fallbackPx {
+		return fallbackPx
+	}
+	if cut < floorPx {
+		return floorPx
+	}
+	return cut
 }
 
 // detectSidebarRight returns the narrower of (the observed right edge of
@@ -447,7 +508,7 @@ func sidebarTabText(txt string) (isPeople, isTab bool) {
 	switch txt {
 	case "People", ls.PeopleTab:
 		return true, true
-	case "Devices", "Items", ls.DevicesTab, ls.ItemsTab:
+	case "Devices", "Items", "Me", ls.DevicesTab, ls.ItemsTab:
 		return false, true
 	default:
 		return false, false
@@ -488,7 +549,11 @@ func looksLikeTimeSuffix(s string) bool {
 }
 
 func isDistance(s string) bool {
-	s = strings.ToLower(s)
+	s = strings.ToLower(strings.TrimSpace(s))
+	// macOS 27 shows "Nearby" in the distance column for things within range.
+	if s == "nearby" {
+		return true
+	}
 	for _, suffix := range []string{" mi", " km", " ft", " m", " yd"} {
 		if strings.HasSuffix(s, suffix) {
 			return true
@@ -510,6 +575,11 @@ func splitLocationStaleness(s string) (location, staleness string) {
 	}
 	left := strings.TrimSpace(s[:idx])
 	right := strings.TrimSpace(s[idx+len("•"):])
+	// macOS 27 can append a third segment (a battery glyph Vision reads as
+	// "CD" or "O", or nothing at all) after the staleness; it isn't text.
+	if j := strings.Index(right, "•"); j >= 0 {
+		right = strings.TrimSpace(right[:j])
+	}
 	if isThisDeviceLabel(left) {
 		return right, ""
 	}
@@ -534,31 +604,7 @@ func isThisDeviceLabel(s string) bool {
 // Battery percentages are extracted into the Battery field; everything else
 // follows the same row-walk logic as ParsePeople.
 func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
-	rows := make([]TextLine, 0, len(lines))
-	effectiveSidebarRightPx := detectSidebarRight(lines, sidebarRightPx)
-	rowStartY := detectSidebarRowStartY(lines, effectiveSidebarRightPx)
-	for _, l := range lines {
-		if strings.TrimSpace(l.Text) == "" {
-			continue
-		}
-		if l.X+l.Width/2 >= effectiveSidebarRightPx {
-			continue
-		}
-		if l.Y < rowStartY {
-			continue
-		}
-		if l.X < textColMinPx {
-			continue
-		}
-		rows = append(rows, l)
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Y == rows[j].Y {
-			return rows[i].X < rows[j].X
-		}
-		return rows[i].Y < rows[j].Y
-	})
-	rows = mergeWrappedContinuations(rows)
+	rows := sidebarRows(lines, sidebarRightPx, textColMinPx)
 
 	skip := GetAppStrings().SkipWords()
 
@@ -597,31 +643,7 @@ func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
 // The layout mirrors Devices (icon column on left, text band middle, distance
 // right) and can also carry a battery indicator OCR'd as "82%" or similar.
 func ParseItems(lines []TextLine, sidebarRightPx, textColMinPx int) []Item {
-	rows := make([]TextLine, 0, len(lines))
-	effectiveSidebarRightPx := detectSidebarRight(lines, sidebarRightPx)
-	rowStartY := detectSidebarRowStartY(lines, effectiveSidebarRightPx)
-	for _, l := range lines {
-		if strings.TrimSpace(l.Text) == "" {
-			continue
-		}
-		if l.X+l.Width/2 >= effectiveSidebarRightPx {
-			continue
-		}
-		if l.Y < rowStartY {
-			continue
-		}
-		if l.X < textColMinPx {
-			continue
-		}
-		rows = append(rows, l)
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Y == rows[j].Y {
-			return rows[i].X < rows[j].X
-		}
-		return rows[i].Y < rows[j].Y
-	})
-	rows = mergeWrappedContinuations(rows)
+	rows := sidebarRows(lines, sidebarRightPx, textColMinPx)
 
 	skip := GetAppStrings().SkipWords()
 
