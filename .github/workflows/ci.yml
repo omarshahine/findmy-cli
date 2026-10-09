@@ -1,0 +1,30 @@
+name: CI
+
+# Nothing compiled the Go CLI or the Swift helper on pull requests;
+# plugin-inspector only covers the OpenClaw plugin in openclaw/.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - run: make build
+      - name: Smoke test the CLI
+        # --help prints usage and exits 2, so check the text, not the status.
+        run: |
+          out=$(./bin/findmy --help 2>&1 || true)
+          grep -q 'findmy devices' <<<"$out"
