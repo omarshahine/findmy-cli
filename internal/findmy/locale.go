@@ -64,8 +64,17 @@ func detectWindowOwner() string {
 	if err != nil {
 		return ""
 	}
-	name := strings.TrimSpace(string(out))
-	if name == "" || name == "(null)" {
+	return parseDisplayName(string(out))
+}
+
+// parseDisplayName turns mdls output into a window owner, or "" when Spotlight
+// had nothing useful. Without Spotlight metadata for FindMy.app (indexing off or
+// the store still rebuilding), mdls falls back to the bundle file name "FindMy",
+// which no locale uses as its window owner, so the locale table is the better bet.
+func parseDisplayName(out string) string {
+	name := strings.TrimSpace(out)
+	switch name {
+	case "", "(null)", "FindMy", "FindMy.app":
 		return ""
 	}
 	return name

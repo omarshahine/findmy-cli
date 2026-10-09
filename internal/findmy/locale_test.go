@@ -47,3 +47,19 @@ func TestLookupStringsHasItemsTab(t *testing.T) {
 		})
 	}
 }
+
+func TestParseDisplayNameIgnoresBundleFileName(t *testing.T) {
+	cases := map[string]string{
+		"Find My\n":    "Find My",
+		"Localiser":    "Localiser",
+		"FindMy\n":     "",
+		"FindMy.app\n": "",
+		"(null)":       "",
+		"":             "",
+	}
+	for in, want := range cases {
+		if got := parseDisplayName(in); got != want {
+			t.Errorf("parseDisplayName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
