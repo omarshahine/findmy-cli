@@ -398,7 +398,7 @@ func parseSidebarEntries(rows []TextLine, withBattery bool) []sidebarEntry {
 	}
 
 	entries := make([]sidebarEntry, 0, len(groups))
-	for gi, g := range groups {
+	for _, g := range groups {
 		// Name and status lines share the row's left edge; the distance sits
 		// in a right-aligned column past the row's midpoint. Classifying by
 		// column keeps an OCR slip like "2,317 ml" out of the location.
@@ -425,18 +425,16 @@ func parseSidebarEntries(rows []TextLine, withBattery bool) []sidebarEntry {
 				text = append(text, txt)
 			}
 		}
-		if len(text) == 0 {
-			continue
-		}
-		// A row scrolled half under the header shows only its status line;
-		// with no name above it, it would become a row named "Home • Now".
-		if gi == 0 && len(text) == 1 && strings.Contains(text[0], "•") {
+		// Every row has a name line and a status line under it. A group with
+		// one line is a row cut off by the window edge (the next page shows it
+		// whole) or one whose name Vision missed. A group that starts with a
+		// "Home • Now" status line has lost its name the same way. Neither has
+		// a name to report.
+		if len(text) < 2 || strings.Contains(text[0], "•") {
 			continue
 		}
 		e.Name = text[0]
-		if len(text) > 1 {
-			e.Location, e.Staleness = splitLocationStaleness(text[1])
-		}
+		e.Location, e.Staleness = splitLocationStaleness(text[1])
 		entries = append(entries, e)
 	}
 	return entries

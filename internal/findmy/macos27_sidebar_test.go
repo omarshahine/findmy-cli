@@ -166,3 +166,27 @@ func TestParseDevicesDistanceByColumn(t *testing.T) {
 		t.Fatalf("got %#v, want [%#v]", got, want)
 	}
 }
+
+// Vision sometimes misses a row's name line; the orphaned status line must not
+// become a row named "Washington, DC • 10 hr. ago".
+func TestParseDevicesSkipsRowWithoutName(t *testing.T) {
+	l := func(y, x, w int, text string) TextLine {
+		return TextLine{Text: text, Confidence: 1, X: x, Y: y, Width: w, Height: 24}
+	}
+	lines := []TextLine{
+		l(127, 59, 89, "People"), l(127, 196, 104, "Devices"), l(127, 354, 74, "Items"), l(125, 514, 41, "Me"),
+		l(458, 119, 258, "Jo's MacBook Air"),
+		l(464, 529, 80, "Nearby"),
+		l(493, 118, 312, "Washington, DC • 41 min. ago"),
+		l(591, 532, 77, "Nearby"),
+		l(622, 119, 294, "Washington, DC • 10 hr. ago"),
+		l(711, 115, 333, "Sam's AirPods"),
+		l(749, 119, 187, "No location found"),
+		// A second nameless row whose status has no "•".
+		l(878, 119, 187, "No location found"),
+	}
+	got := ParseDevices(lines, SidebarRightPt*2, TextColumnMinPt*2)
+	if len(got) != 2 || got[0].Name != "Jo's MacBook Air" || got[1].Name != "Sam's AirPods" {
+		t.Fatalf("got %#v, want Jo's MacBook Air and Sam's AirPods only", got)
+	}
+}
