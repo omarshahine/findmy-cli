@@ -208,7 +208,7 @@ func watchTmpDir() string {
 
 func watchPixelLayout(w *Window, imagePath string) (sidebarRightPx, textColMinPx int) {
 	scale := watchImageScale(w, imagePath)
-	return int(340 * scale), int(80 * scale)
+	return int(SidebarRightPt * scale), int(TextColumnMinPt * scale)
 }
 
 func watchImageScale(w *Window, imagePath string) float64 {

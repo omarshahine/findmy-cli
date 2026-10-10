@@ -40,6 +40,18 @@ func TestSplitLocationStaleness(t *testing.T) {
 			wantStaleness: "",
 		},
 		{
+			name:          "macOS 27 battery glyph after staleness",
+			in:            "Home • Now • CD",
+			wantLocation:  "Home",
+			wantStaleness: "Now",
+		},
+		{
+			name:          "macOS 27 trailing empty segment",
+			in:            "Sedro Woolley, WA • Paused •",
+			wantLocation:  "Sedro Woolley, WA",
+			wantStaleness: "Paused",
+		},
+		{
 			name:          "ordinary location starting with This (not a badge)",
 			in:            "This Pleasant Street • Now",
 			wantLocation:  "This Pleasant Street",

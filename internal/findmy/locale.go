@@ -20,6 +20,8 @@ type AppStrings struct {
 	PeopleTab         string   // People tab in View menu
 	DevicesTab        string   // Devices tab
 	ItemsTab          string   // Items tab
+	MeTab             string   // Me tab (macOS 27 sidebar), only used to find the sidebar edge
+	NearbyLabel       string   // macOS 27 distance-column text for things within range
 	SearchLabel       string   // Search field label in sidebar
 	TimeSuffixes      []string // patterns for wrapped-line merging (see looksLikeTimeSuffix)
 	DetailPaneButtons []string // Button labels to ignore while OCR'ing the detail pane
@@ -186,51 +188,53 @@ var frTimeSuffixes = []string{
 //   View menu   → AppKit MenuCommands.loctable
 //   People/Devices/Items tabs → FindMy Localizable.loctable / Localizable-HAWKEYE.loctable
 //   Search      → FindMy Localizable.loctable (SEARCH_BAR_PLACEHOLDER_ALTERNATIVE)
+//   Me tab      → FindMy Localizable.loctable (ME_TAB)
+//   Nearby      → FindMyCore.framework Models.loctable (DISTANCE_FROM_USER_NEARBY)
 //   WindowOwner → FindMy InfoPlist.loctable (fallback; runtime mdls detection preferred)
 //
 // TimeSuffixes: only en and fr have specific patterns. Other locales inherit
 // defaultTimeSuffixes which is sufficient for the wrapped-line merging heuristic.
 
 var localeTable = map[string]*AppStrings{
-	"ar":     {WindowOwner: "تحديد الموقع", ViewMenu: "عرض", PeopleTab: "الأشخاص", DevicesTab: "الأجهزة", ItemsTab: "الأغراض", SearchLabel: "بحث", TimeSuffixes: defaultTimeSuffixes},
-	"ca":     {WindowOwner: "Cerca", ViewMenu: "Mostra", PeopleTab: "Persones", DevicesTab: "Dispositius", ItemsTab: "Objectes", SearchLabel: "Cerca", TimeSuffixes: defaultTimeSuffixes},
-	"cs":     {WindowOwner: "Najít", ViewMenu: "Zobrazení", PeopleTab: "Lidé", DevicesTab: "Zařízení", ItemsTab: "Předměty", SearchLabel: "Hledat", TimeSuffixes: defaultTimeSuffixes},
-	"da":     {WindowOwner: "Find", ViewMenu: "Oversigt", PeopleTab: "Personer", DevicesTab: "Enheder", ItemsTab: "Genstande", SearchLabel: "Søg", TimeSuffixes: defaultTimeSuffixes},
-	"de":     {WindowOwner: "Wo ist?", ViewMenu: "Darstellung", PeopleTab: "Personen", DevicesTab: "Geräte", ItemsTab: "Objekte", SearchLabel: "Suchen", TimeSuffixes: defaultTimeSuffixes},
-	"el":     {WindowOwner: "Εύρεση", ViewMenu: "Προβολή", PeopleTab: "Άτομα", DevicesTab: "Συσκευές", ItemsTab: "Αντικείμενα", SearchLabel: "Αναζήτηση", TimeSuffixes: defaultTimeSuffixes},
-	"en":     {WindowOwner: "Find My", ViewMenu: "View", PeopleTab: "People", DevicesTab: "Devices", ItemsTab: "Items", SearchLabel: "Search", TimeSuffixes: defaultTimeSuffixes},
-	"en_AU":  {WindowOwner: "Find My", ViewMenu: "View", PeopleTab: "People", DevicesTab: "Devices", ItemsTab: "Items", SearchLabel: "Search", TimeSuffixes: defaultTimeSuffixes},
-	"en_GB":  {WindowOwner: "Find My", ViewMenu: "View", PeopleTab: "People", DevicesTab: "Devices", ItemsTab: "Items", SearchLabel: "Search", TimeSuffixes: defaultTimeSuffixes},
-	"es":     {WindowOwner: "Buscar", ViewMenu: "Visualización", PeopleTab: "Personas", DevicesTab: "Dispositivos", ItemsTab: "Objetos", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
-	"es_419": {WindowOwner: "Encontrar", ViewMenu: "Visualización", PeopleTab: "Personas", DevicesTab: "Dispositivos", ItemsTab: "Artículos", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
-	"es_US":  {WindowOwner: "Encontrar", ViewMenu: "Visualización", PeopleTab: "Personas", DevicesTab: "Dispositivos", ItemsTab: "Artículos", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
-	"fi":     {WindowOwner: "Etsi", ViewMenu: "Näytä", PeopleTab: "Käyttäjät", DevicesTab: "Laitteet", ItemsTab: "Esineet", SearchLabel: "Etsi", TimeSuffixes: defaultTimeSuffixes},
-	"fr":     {WindowOwner: "Localiser", ViewMenu: "Présentation", PeopleTab: "Personnes", DevicesTab: "Appareils", ItemsTab: "Objets", SearchLabel: "Rechercher", TimeSuffixes: append(append([]string{}, frTimeSuffixes...), defaultTimeSuffixes...)},
-	"fr_CA":  {WindowOwner: "Localiser", ViewMenu: "Présentation", PeopleTab: "Personnes", DevicesTab: "Appareils", ItemsTab: "Objets", SearchLabel: "Rechercher", TimeSuffixes: append(append([]string{}, frTimeSuffixes...), defaultTimeSuffixes...)},
-	"he":     {WindowOwner: "איתור", ViewMenu: "תצוגה", PeopleTab: "אנשים", DevicesTab: "מכשירים", ItemsTab: "פריטים", SearchLabel: "חיפוש", TimeSuffixes: defaultTimeSuffixes},
-	"hi":     {WindowOwner: "Find My", ViewMenu: "दृश्य", PeopleTab: "लोग", DevicesTab: "डिवाइस", ItemsTab: "आइटम", SearchLabel: "खोजें", TimeSuffixes: defaultTimeSuffixes},
-	"hr":     {WindowOwner: "Pronalaženje", ViewMenu: "Prikaz", PeopleTab: "Osobe", DevicesTab: "Uređaji", ItemsTab: "Predmeti", SearchLabel: "Pretraga", TimeSuffixes: defaultTimeSuffixes},
-	"hu":     {WindowOwner: "Lokátor", ViewMenu: "Nézet", PeopleTab: "Személyek", DevicesTab: "Eszközök", ItemsTab: "Tárgyak", SearchLabel: "Keresés", TimeSuffixes: defaultTimeSuffixes},
-	"id":     {WindowOwner: "Lacak", ViewMenu: "Lihat", PeopleTab: "Orang", DevicesTab: "Perangkat", ItemsTab: "Barang", SearchLabel: "Cari", TimeSuffixes: defaultTimeSuffixes},
-	"it":     {WindowOwner: "Dov'è", ViewMenu: "Vista", PeopleTab: "Persone", DevicesTab: "Dispositivi", ItemsTab: "Oggetti", SearchLabel: "Cerca", TimeSuffixes: defaultTimeSuffixes},
-	"ja":     {WindowOwner: "探す", ViewMenu: "表示", PeopleTab: "人を探す", DevicesTab: "デバイスを探す", ItemsTab: "持ち物を探す", SearchLabel: "検索", TimeSuffixes: defaultTimeSuffixes},
-	"ko":     {WindowOwner: "나의 찾기", ViewMenu: "보기", PeopleTab: "사람", DevicesTab: "기기", ItemsTab: "물품", SearchLabel: "검색", TimeSuffixes: defaultTimeSuffixes},
-	"ms":     {WindowOwner: "Cari", ViewMenu: "Paparan", PeopleTab: "Orang", DevicesTab: "Peranti", ItemsTab: "Item", SearchLabel: "Cari", TimeSuffixes: defaultTimeSuffixes},
-	"nl":     {WindowOwner: "Zoek mijn", ViewMenu: "Weergave", PeopleTab: "Personen", DevicesTab: "Apparaten", ItemsTab: "Objecten", SearchLabel: "Zoek", TimeSuffixes: defaultTimeSuffixes},
-	"no":     {WindowOwner: "Hvor er", ViewMenu: "Vis", PeopleTab: "Personer", DevicesTab: "Enheter", ItemsTab: "Objekter", SearchLabel: "Søk", TimeSuffixes: defaultTimeSuffixes},
-	"pl":     {WindowOwner: "Znajdź", ViewMenu: "Widok", PeopleTab: "Osoby", DevicesTab: "Urządzenia", ItemsTab: "Przedmioty", SearchLabel: "Szukaj", TimeSuffixes: defaultTimeSuffixes},
-	"pt":     {WindowOwner: "Buscar", ViewMenu: "Visualizar", PeopleTab: "Pessoas", DevicesTab: "Dispositivos", ItemsTab: "Itens", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
-	"pt_PT":  {WindowOwner: "Encontrar", ViewMenu: "Visualização", PeopleTab: "Pessoas", DevicesTab: "Dispositivos", ItemsTab: "Objetos", SearchLabel: "Procurar", TimeSuffixes: defaultTimeSuffixes},
-	"ro":     {WindowOwner: "Găsire", ViewMenu: "Vizualizare", PeopleTab: "Persoane", DevicesTab: "Dispozitive", ItemsTab: "Articole", SearchLabel: "Căutare", TimeSuffixes: defaultTimeSuffixes},
-	"ru":     {WindowOwner: "Локатор", ViewMenu: "Вид", PeopleTab: "Люди", DevicesTab: "Устройства", ItemsTab: "Вещи", SearchLabel: "Поиск", TimeSuffixes: defaultTimeSuffixes},
-	"sk":     {WindowOwner: "Nájsť", ViewMenu: "Zobraziť", PeopleTab: "Ľudia", DevicesTab: "Zariadenia", ItemsTab: "Predmety", SearchLabel: "Vyhľadať", TimeSuffixes: defaultTimeSuffixes},
-	"sl":     {WindowOwner: "Najdi", ViewMenu: "Prikaz", PeopleTab: "Osebe", DevicesTab: "Naprave", ItemsTab: "Predmeti", SearchLabel: "Iskanje", TimeSuffixes: defaultTimeSuffixes},
-	"sv":     {WindowOwner: "Hitta", ViewMenu: "Innehåll", PeopleTab: "Personer", DevicesTab: "Enheter", ItemsTab: "Föremål", SearchLabel: "Sök", TimeSuffixes: defaultTimeSuffixes},
-	"th":     {WindowOwner: "ค้นหาของฉัน", ViewMenu: "มุมมอง", PeopleTab: "ผู้คน", DevicesTab: "อุปกรณ์", ItemsTab: "สิ่งของ", SearchLabel: "ค้นหา", TimeSuffixes: defaultTimeSuffixes},
-	"tr":     {WindowOwner: "Bul", ViewMenu: "Görüntü", PeopleTab: "Kişiler", DevicesTab: "Aygıtlar", ItemsTab: "Nesneler", SearchLabel: "Arayın", TimeSuffixes: defaultTimeSuffixes},
-	"uk":     {WindowOwner: "Локатор", ViewMenu: "Перегляд", PeopleTab: "Люди", DevicesTab: "Пристрої", ItemsTab: "Речі", SearchLabel: "Шукати", TimeSuffixes: defaultTimeSuffixes},
-	"vi":     {WindowOwner: "Tìm", ViewMenu: "Xem", PeopleTab: "Người", DevicesTab: "Thiết bị", ItemsTab: "Vật dụng", SearchLabel: "Tìm kiếm", TimeSuffixes: defaultTimeSuffixes},
-	"zh_CN":  {WindowOwner: "查找", ViewMenu: "显示", PeopleTab: "联系人", DevicesTab: "设备", ItemsTab: "物品", SearchLabel: "搜索", TimeSuffixes: defaultTimeSuffixes},
-	"zh_HK":  {WindowOwner: "尋找", ViewMenu: "顯示方式", PeopleTab: "聯絡人", DevicesTab: "裝置", ItemsTab: "物品", SearchLabel: "搜尋", TimeSuffixes: defaultTimeSuffixes},
-	"zh_TW":  {WindowOwner: "尋找", ViewMenu: "顯示方式", PeopleTab: "聯絡人", DevicesTab: "裝置", ItemsTab: "物品", SearchLabel: "搜尋", TimeSuffixes: defaultTimeSuffixes},
+	"ar":     {WindowOwner: "تحديد الموقع", ViewMenu: "عرض", PeopleTab: "الأشخاص", DevicesTab: "الأجهزة", ItemsTab: "الأغراض", MeTab: "أنا", NearbyLabel: "قريب", SearchLabel: "بحث", TimeSuffixes: defaultTimeSuffixes},
+	"ca":     {WindowOwner: "Cerca", ViewMenu: "Mostra", PeopleTab: "Persones", DevicesTab: "Dispositius", ItemsTab: "Objectes", MeTab: "Jo", NearbyLabel: "A prop", SearchLabel: "Cerca", TimeSuffixes: defaultTimeSuffixes},
+	"cs":     {WindowOwner: "Najít", ViewMenu: "Zobrazení", PeopleTab: "Lidé", DevicesTab: "Zařízení", ItemsTab: "Předměty", MeTab: "Já", NearbyLabel: "V blízkosti", SearchLabel: "Hledat", TimeSuffixes: defaultTimeSuffixes},
+	"da":     {WindowOwner: "Find", ViewMenu: "Oversigt", PeopleTab: "Personer", DevicesTab: "Enheder", ItemsTab: "Genstande", MeTab: "Mig", NearbyLabel: "I nærheden", SearchLabel: "Søg", TimeSuffixes: defaultTimeSuffixes},
+	"de":     {WindowOwner: "Wo ist?", ViewMenu: "Darstellung", PeopleTab: "Personen", DevicesTab: "Geräte", ItemsTab: "Objekte", MeTab: "Ich", NearbyLabel: "In der Nähe", SearchLabel: "Suchen", TimeSuffixes: defaultTimeSuffixes},
+	"el":     {WindowOwner: "Εύρεση", ViewMenu: "Προβολή", PeopleTab: "Άτομα", DevicesTab: "Συσκευές", ItemsTab: "Αντικείμενα", MeTab: "Εγώ", NearbyLabel: "Κοντά", SearchLabel: "Αναζήτηση", TimeSuffixes: defaultTimeSuffixes},
+	"en":     {WindowOwner: "Find My", ViewMenu: "View", PeopleTab: "People", DevicesTab: "Devices", ItemsTab: "Items", MeTab: "Me", NearbyLabel: "Nearby", SearchLabel: "Search", TimeSuffixes: defaultTimeSuffixes},
+	"en_AU":  {WindowOwner: "Find My", ViewMenu: "View", PeopleTab: "People", DevicesTab: "Devices", ItemsTab: "Items", MeTab: "Me", NearbyLabel: "Nearby", SearchLabel: "Search", TimeSuffixes: defaultTimeSuffixes},
+	"en_GB":  {WindowOwner: "Find My", ViewMenu: "View", PeopleTab: "People", DevicesTab: "Devices", ItemsTab: "Items", MeTab: "Me", NearbyLabel: "Nearby", SearchLabel: "Search", TimeSuffixes: defaultTimeSuffixes},
+	"es":     {WindowOwner: "Buscar", ViewMenu: "Visualización", PeopleTab: "Personas", DevicesTab: "Dispositivos", ItemsTab: "Objetos", MeTab: "Yo", NearbyLabel: "Cerca", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
+	"es_419": {WindowOwner: "Encontrar", ViewMenu: "Visualización", PeopleTab: "Personas", DevicesTab: "Dispositivos", ItemsTab: "Artículos", MeTab: "Yo", NearbyLabel: "Cerca", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
+	"es_US":  {WindowOwner: "Encontrar", ViewMenu: "Visualización", PeopleTab: "Personas", DevicesTab: "Dispositivos", ItemsTab: "Artículos", MeTab: "Yo", NearbyLabel: "Cerca", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
+	"fi":     {WindowOwner: "Etsi", ViewMenu: "Näytä", PeopleTab: "Käyttäjät", DevicesTab: "Laitteet", ItemsTab: "Esineet", MeTab: "Minä", NearbyLabel: "Lähellä", SearchLabel: "Etsi", TimeSuffixes: defaultTimeSuffixes},
+	"fr":     {WindowOwner: "Localiser", ViewMenu: "Présentation", PeopleTab: "Personnes", DevicesTab: "Appareils", ItemsTab: "Objets", MeTab: "Moi", NearbyLabel: "À proximité", SearchLabel: "Rechercher", TimeSuffixes: append(append([]string{}, frTimeSuffixes...), defaultTimeSuffixes...)},
+	"fr_CA":  {WindowOwner: "Localiser", ViewMenu: "Présentation", PeopleTab: "Personnes", DevicesTab: "Appareils", ItemsTab: "Objets", MeTab: "Moi", NearbyLabel: "À proximité", SearchLabel: "Rechercher", TimeSuffixes: append(append([]string{}, frTimeSuffixes...), defaultTimeSuffixes...)},
+	"he":     {WindowOwner: "איתור", ViewMenu: "תצוגה", PeopleTab: "אנשים", DevicesTab: "מכשירים", ItemsTab: "פריטים", MeTab: "אני", NearbyLabel: "בסביבה", SearchLabel: "חיפוש", TimeSuffixes: defaultTimeSuffixes},
+	"hi":     {WindowOwner: "Find My", ViewMenu: "दृश्य", PeopleTab: "लोग", DevicesTab: "डिवाइस", ItemsTab: "आइटम", MeTab: "मैं", NearbyLabel: "आस-पास", SearchLabel: "खोजें", TimeSuffixes: defaultTimeSuffixes},
+	"hr":     {WindowOwner: "Pronalaženje", ViewMenu: "Prikaz", PeopleTab: "Osobe", DevicesTab: "Uređaji", ItemsTab: "Predmeti", MeTab: "Ja", NearbyLabel: "U blizini", SearchLabel: "Pretraga", TimeSuffixes: defaultTimeSuffixes},
+	"hu":     {WindowOwner: "Lokátor", ViewMenu: "Nézet", PeopleTab: "Személyek", DevicesTab: "Eszközök", ItemsTab: "Tárgyak", MeTab: "Én", NearbyLabel: "Közelben", SearchLabel: "Keresés", TimeSuffixes: defaultTimeSuffixes},
+	"id":     {WindowOwner: "Lacak", ViewMenu: "Lihat", PeopleTab: "Orang", DevicesTab: "Perangkat", ItemsTab: "Barang", MeTab: "Saya", NearbyLabel: "Di Sekitar", SearchLabel: "Cari", TimeSuffixes: defaultTimeSuffixes},
+	"it":     {WindowOwner: "Dov'è", ViewMenu: "Vista", PeopleTab: "Persone", DevicesTab: "Dispositivi", ItemsTab: "Oggetti", MeTab: "Io", NearbyLabel: "Nelle vicinanze", SearchLabel: "Cerca", TimeSuffixes: defaultTimeSuffixes},
+	"ja":     {WindowOwner: "探す", ViewMenu: "表示", PeopleTab: "人を探す", DevicesTab: "デバイスを探す", ItemsTab: "持ち物を探す", MeTab: "自分", NearbyLabel: "この周辺", SearchLabel: "検索", TimeSuffixes: defaultTimeSuffixes},
+	"ko":     {WindowOwner: "나의 찾기", ViewMenu: "보기", PeopleTab: "사람", DevicesTab: "기기", ItemsTab: "물품", MeTab: "나", NearbyLabel: "근처", SearchLabel: "검색", TimeSuffixes: defaultTimeSuffixes},
+	"ms":     {WindowOwner: "Cari", ViewMenu: "Paparan", PeopleTab: "Orang", DevicesTab: "Peranti", ItemsTab: "Item", MeTab: "Saya", NearbyLabel: "Berdekatan", SearchLabel: "Cari", TimeSuffixes: defaultTimeSuffixes},
+	"nl":     {WindowOwner: "Zoek mijn", ViewMenu: "Weergave", PeopleTab: "Personen", DevicesTab: "Apparaten", ItemsTab: "Objecten", MeTab: "Ik", NearbyLabel: "In de buurt", SearchLabel: "Zoek", TimeSuffixes: defaultTimeSuffixes},
+	"no":     {WindowOwner: "Hvor er", ViewMenu: "Vis", PeopleTab: "Personer", DevicesTab: "Enheter", ItemsTab: "Objekter", MeTab: "Meg", NearbyLabel: "I nærheten", SearchLabel: "Søk", TimeSuffixes: defaultTimeSuffixes},
+	"pl":     {WindowOwner: "Znajdź", ViewMenu: "Widok", PeopleTab: "Osoby", DevicesTab: "Urządzenia", ItemsTab: "Przedmioty", MeTab: "Ja", NearbyLabel: "W pobliżu", SearchLabel: "Szukaj", TimeSuffixes: defaultTimeSuffixes},
+	"pt":     {WindowOwner: "Buscar", ViewMenu: "Visualizar", PeopleTab: "Pessoas", DevicesTab: "Dispositivos", ItemsTab: "Itens", MeTab: "Eu", NearbyLabel: "Por perto", SearchLabel: "Buscar", TimeSuffixes: defaultTimeSuffixes},
+	"pt_PT":  {WindowOwner: "Encontrar", ViewMenu: "Visualização", PeopleTab: "Pessoas", DevicesTab: "Dispositivos", ItemsTab: "Objetos", MeTab: "Eu", NearbyLabel: "Por perto", SearchLabel: "Procurar", TimeSuffixes: defaultTimeSuffixes},
+	"ro":     {WindowOwner: "Găsire", ViewMenu: "Vizualizare", PeopleTab: "Persoane", DevicesTab: "Dispozitive", ItemsTab: "Articole", MeTab: "Dvs.", NearbyLabel: "În apropiere", SearchLabel: "Căutare", TimeSuffixes: defaultTimeSuffixes},
+	"ru":     {WindowOwner: "Локатор", ViewMenu: "Вид", PeopleTab: "Люди", DevicesTab: "Устройства", ItemsTab: "Вещи", MeTab: "Я", NearbyLabel: "Рядом", SearchLabel: "Поиск", TimeSuffixes: defaultTimeSuffixes},
+	"sk":     {WindowOwner: "Nájsť", ViewMenu: "Zobraziť", PeopleTab: "Ľudia", DevicesTab: "Zariadenia", ItemsTab: "Predmety", MeTab: "Ja", NearbyLabel: "V blízkosti", SearchLabel: "Vyhľadať", TimeSuffixes: defaultTimeSuffixes},
+	"sl":     {WindowOwner: "Najdi", ViewMenu: "Prikaz", PeopleTab: "Osebe", DevicesTab: "Naprave", ItemsTab: "Predmeti", MeTab: "Jaz", NearbyLabel: "V bližini", SearchLabel: "Iskanje", TimeSuffixes: defaultTimeSuffixes},
+	"sv":     {WindowOwner: "Hitta", ViewMenu: "Innehåll", PeopleTab: "Personer", DevicesTab: "Enheter", ItemsTab: "Föremål", MeTab: "Jag", NearbyLabel: "I närheten", SearchLabel: "Sök", TimeSuffixes: defaultTimeSuffixes},
+	"th":     {WindowOwner: "ค้นหาของฉัน", ViewMenu: "มุมมอง", PeopleTab: "ผู้คน", DevicesTab: "อุปกรณ์", ItemsTab: "สิ่งของ", MeTab: "ฉัน", NearbyLabel: "ใกล้เคียง", SearchLabel: "ค้นหา", TimeSuffixes: defaultTimeSuffixes},
+	"tr":     {WindowOwner: "Bul", ViewMenu: "Görüntü", PeopleTab: "Kişiler", DevicesTab: "Aygıtlar", ItemsTab: "Nesneler", MeTab: "Ben", NearbyLabel: "Yakında", SearchLabel: "Arayın", TimeSuffixes: defaultTimeSuffixes},
+	"uk":     {WindowOwner: "Локатор", ViewMenu: "Перегляд", PeopleTab: "Люди", DevicesTab: "Пристрої", ItemsTab: "Речі", MeTab: "Я", NearbyLabel: "Поблизу", SearchLabel: "Шукати", TimeSuffixes: defaultTimeSuffixes},
+	"vi":     {WindowOwner: "Tìm", ViewMenu: "Xem", PeopleTab: "Người", DevicesTab: "Thiết bị", ItemsTab: "Vật dụng", MeTab: "Tôi", NearbyLabel: "Ở gần", SearchLabel: "Tìm kiếm", TimeSuffixes: defaultTimeSuffixes},
+	"zh_CN":  {WindowOwner: "查找", ViewMenu: "显示", PeopleTab: "联系人", DevicesTab: "设备", ItemsTab: "物品", MeTab: "我", NearbyLabel: "附近", SearchLabel: "搜索", TimeSuffixes: defaultTimeSuffixes},
+	"zh_HK":  {WindowOwner: "尋找", ViewMenu: "顯示方式", PeopleTab: "聯絡人", DevicesTab: "裝置", ItemsTab: "物品", MeTab: "本人", NearbyLabel: "附近", SearchLabel: "搜尋", TimeSuffixes: defaultTimeSuffixes},
+	"zh_TW":  {WindowOwner: "尋找", ViewMenu: "顯示方式", PeopleTab: "聯絡人", DevicesTab: "裝置", ItemsTab: "物品", MeTab: "本人", NearbyLabel: "附近", SearchLabel: "搜尋", TimeSuffixes: defaultTimeSuffixes},
 }

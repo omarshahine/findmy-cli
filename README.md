@@ -152,7 +152,11 @@ testing.
 Grant to the terminal emulator (or to `findmy` once installed system-wide):
 
 - **Screen Recording** — for `screencapture`
-- **Accessibility** — for `osascript` menu clicks
+- **Accessibility** — for `osascript` menu clicks, and for scrolling the
+  sidebar so `people`, `devices` and `items` read every row, not just the ones
+  that fit in the window. Scrolling moves the pointer over the Find My sidebar
+  while it runs. Without Accessibility those commands read one window's worth
+  of rows and say so on stderr.
 
 Settings → Privacy & Security → Screen Recording / Accessibility.
 
@@ -217,6 +221,9 @@ diagnostic — TCC denied is more common than missing display.
   warning to stderr and leaves `precise_address` unset rather than guessing.
   Everything else — `people`, `devices`, `items`, `watch`, `log` — is
   unaffected. Tracked in [#13](https://github.com/omarshahine/findmy-cli/issues/13).
+- **`watch` reads only the rows that fit in the Find My window.** It polls on
+  an interval, and scrolling the sidebar every poll would keep moving your
+  pointer. Make the window tall enough for the rows you watch.
 - **The display must be awake and unlocked.** WindowServer stops compositing
   when the display sleeps, so `screencapture` returns a 99 KB all-black PNG.
   The CLI detects this and tells you to wake the keyboard. There is no

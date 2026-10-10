@@ -213,15 +213,9 @@ func runPeople(args []string) {
 	w, err := findmy.PreparePeople()
 	must(err)
 	shot := filepath.Join(tmpDir(), "people.png")
-	must(findmy.Capture(w, shot))
 	defer cleanup(shot, opts.keep)
-
-	lines, err := findmy.OCR(shot)
-	must(err)
-
-	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
-	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "People"))
-	people := findmy.ParsePeople(lines, sidebarRightPx, textColMinPx)
+	people := readSidebar(w, shot, "People", findmy.ParsePeople,
+		func(r findmy.Person) string { return r.Name })
 	appendObservations("people", peopleObservations(people), opts.noLog)
 
 	if opts.json {
@@ -251,15 +245,9 @@ func runDevices(args []string) {
 	w, err := findmy.PrepareDevices()
 	must(err)
 	shot := filepath.Join(tmpDir(), "devices.png")
-	must(findmy.Capture(w, shot))
 	defer cleanup(shot, opts.keep)
-
-	lines, err := findmy.OCR(shot)
-	must(err)
-
-	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
-	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Devices"))
-	devices := findmy.ParseDevices(lines, sidebarRightPx, textColMinPx)
+	devices := readSidebar(w, shot, "Devices", findmy.ParseDevices,
+		func(r findmy.Device) string { return r.Name })
 	appendObservations("devices", deviceObservations(devices), opts.noLog)
 
 	if opts.json {
@@ -292,15 +280,9 @@ func runItems(args []string) {
 	w, err := findmy.PrepareItems()
 	must(err)
 	shot := filepath.Join(tmpDir(), "items.png")
-	must(findmy.Capture(w, shot))
 	defer cleanup(shot, opts.keep)
-
-	lines, err := findmy.OCR(shot)
-	must(err)
-
-	sidebarRightPx, textColMinPx := pixelLayout(w, shot)
-	must(findmy.RequireSidebarVisible(lines, sidebarRightPx, "Items"))
-	items := findmy.ParseItems(lines, sidebarRightPx, textColMinPx)
+	items := readSidebar(w, shot, "Items", findmy.ParseItems,
+		func(r findmy.Item) string { return r.Name })
 	appendObservations("items", itemObservations(items), opts.noLog)
 
 	if opts.json {
@@ -772,6 +754,7 @@ func runPerson(args []string) {
 
 func findSidebarNameLine(lines []findmy.TextLine, sidebarRightPx, textColMinPx int, name string) (findmy.TextLine, bool) {
 	target := strings.ToLower(strings.TrimSpace(name))
+	textColMinPx = findmy.DetectTextColumnMin(lines, sidebarRightPx, 0, textColMinPx)
 	var contains *findmy.TextLine
 	for i := range lines {
 		l := lines[i]
@@ -867,7 +850,7 @@ func zoomDelay() time.Duration {
 // non-integer pixel-per-point ratios.
 func pixelLayout(w *findmy.Window, imagePath string) (sidebarRightPx, textColMinPx int) {
 	scale := imageScale(w, imagePath)
-	return int(340 * scale), int(60 * scale)
+	return int(findmy.SidebarRightPt * scale), int(findmy.TextColumnMinPt * scale)
 }
 
 func windowPointFromImagePoint(w *findmy.Window, imagePath string, px, py int) (int, int) {
@@ -904,6 +887,33 @@ func emitJSON(v any) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
+}
+
+// readSidebar reads every row of the current sidebar tab, scrolling page by
+// page (see findmy.ScrollPages) and keeping the first reading of each name.
+// Rows cut off at a page edge are dropped by the parser and read whole on the
+// next page.
+func readSidebar[T any](w *findmy.Window, shot, tab string, parse func([]findmy.TextLine, int, int) []T, name func(T) string) []T {
+	var all []T
+	seen := map[string]bool{}
+	must(findmy.ScrollPages(w, shot, func(lines []findmy.TextLine, first bool) ([]string, error) {
+		sidebarRightPx, textColMinPx := pixelLayout(w, shot)
+		if first {
+			if err := findmy.RequireSidebarVisible(lines, sidebarRightPx, tab); err != nil {
+				return nil, err
+			}
+		}
+		var names []string
+		for _, r := range parse(lines, sidebarRightPx, textColMinPx) {
+			names = append(names, name(r))
+			if !seen[name(r)] {
+				seen[name(r)] = true
+				all = append(all, r)
+			}
+		}
+		return names, nil
+	}))
+	return all
 }
 
 func cleanup(path string, keep bool) {
