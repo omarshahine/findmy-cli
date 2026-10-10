@@ -333,41 +333,122 @@ func RequireSidebarVisible(lines []TextLine, sidebarRightPx int, tabName string)
 //
 // We discard the avatar band entirely (it produces low-confidence fragments
 // like "Is" or "rk" from initials and shadows that otherwise get misread as
-// person names), then walk the remaining lines top-to-bottom. The sidebar's
+// person names), then group the remaining lines into rows by vertical gap
+// (see parseSidebarEntries). The sidebar's
 // right edge and the y-cutoff for the first row are derived from the OCR'd
 // People/Devices/Items tab-pill positions (see detectSidebarRight,
 // detectSidebarRowStartY) rather than fixed at scaled-point constants — the
 // dynamic bounds handle compact Catalyst layouts where map labels would
 // otherwise bleed into the fixed cutoff.
 func ParsePeople(lines []TextLine, sidebarRightPx, textColMinPx int) []Person {
-	rows := sidebarRows(lines, sidebarRightPx, textColMinPx)
-
-	skip := GetAppStrings().SkipWords()
-
-	people := make([]Person, 0)
-	var current *Person
-	for _, l := range rows {
-		txt := strings.TrimSpace(l.Text)
-		if skip[txt] {
-			continue
-		}
-		if isDistance(txt) {
-			if current != nil {
-				current.Distance = txt
-			}
-			continue
-		}
-		if current == nil || current.Location != "" {
-			people = append(people, Person{Name: txt})
-			current = &people[len(people)-1]
-			continue
-		}
-		loc, stale := splitLocationStaleness(txt)
-		current.Location = loc
-		current.Staleness = stale
+	entries := parseSidebarEntries(sidebarRows(lines, sidebarRightPx, textColMinPx), false)
+	people := make([]Person, 0, len(entries))
+	for _, e := range entries {
+		people = append(people, Person{Name: e.Name, Location: e.Location, Staleness: e.Staleness, Distance: e.Distance})
 	}
 	return people
 }
+
+// sidebarEntry is one sidebar row before it becomes a Person, Device or Item.
+type sidebarEntry struct {
+	Name, Location, Staleness, Distance, Battery string
+}
+
+// sidebarRowGapFactor sets how far apart (bottom of one line to top of the
+// next, as a multiple of the median line height) two lines must be to belong to
+// different rows. Lines inside a row sit 2-12px apart at 2x and rows sit 60px+
+// apart, so one median line height (~24px) splits them with room on both sides.
+const sidebarRowGapFactor = 1.0
+
+// parseSidebarEntries groups sorted sidebar lines into rows by vertical gap,
+// then reads each row as: name, then location/staleness, then anything else
+// (macOS 27's "Shared with Sarah" line on shared items) ignored. Distances
+// and, with withBattery, battery percentages are picked out of the row
+// wherever they sit. Grouping by gap rather than alternating name/location
+// keeps one extra or missing line from shifting every row after it.
+func parseSidebarEntries(rows []TextLine, withBattery bool) []sidebarEntry {
+	skip := GetAppStrings().SkipWords()
+	kept := make([]TextLine, 0, len(rows))
+	for _, l := range rows {
+		if !skip[strings.TrimSpace(l.Text)] {
+			kept = append(kept, l)
+		}
+	}
+	if len(kept) == 0 {
+		return []sidebarEntry{}
+	}
+	heights := make([]int, len(kept))
+	for i, l := range kept {
+		heights[i] = l.Height
+	}
+	sort.Ints(heights)
+	maxGap := int(float64(heights[len(heights)/2]) * sidebarRowGapFactor)
+
+	var groups [][]TextLine
+	bottom := 0
+	for i, l := range kept {
+		if i == 0 || l.Y-bottom > maxGap {
+			groups = append(groups, nil)
+			bottom = 0
+		}
+		groups[len(groups)-1] = append(groups[len(groups)-1], l)
+		if b := l.Y + l.Height; b > bottom {
+			bottom = b
+		}
+	}
+
+	entries := make([]sidebarEntry, 0, len(groups))
+	for gi, g := range groups {
+		// Name and status lines share the row's left edge; the distance sits
+		// in a right-aligned column past the row's midpoint. Classifying by
+		// column keeps an OCR slip like "2,317 ml" out of the location.
+		left, right := g[0].X, 0
+		for _, l := range g {
+			if l.X < left {
+				left = l.X
+			}
+			if r := l.X + l.Width; r > right {
+				right = r
+			}
+		}
+		mid := left + (right-left)/2
+		var e sidebarEntry
+		var text []string
+		for _, l := range g {
+			txt := strings.TrimSpace(l.Text)
+			switch {
+			case withBattery && isBattery(txt):
+				e.Battery = txt
+			case isDistance(txt) || l.X > mid:
+				e.Distance = txt
+			default:
+				text = append(text, txt)
+			}
+		}
+		if len(text) == 0 {
+			continue
+		}
+		// A row scrolled half under the header shows only its status line;
+		// with no name above it, it would become a row named "Home • Now".
+		if gi == 0 && len(text) == 1 && strings.Contains(text[0], "•") {
+			continue
+		}
+		e.Name = text[0]
+		if len(text) > 1 {
+			e.Location, e.Staleness = splitLocationStaleness(text[1])
+		}
+		entries = append(entries, e)
+	}
+	return entries
+}
+
+// Fixed sidebar geometry in points, scaled to image pixels by callers. Both
+// the one-shot commands and watch must use the same values: watch once had its
+// own 80pt text cutoff, which drops every macOS 27 row (text at ~59pt).
+const (
+	SidebarRightPt  = 340
+	TextColumnMinPt = 60
+)
 
 // sidebarRows returns the OCR lines that belong to sidebar rows, sorted top to
 // bottom with wrapped continuations merged: inside the sidebar, below the tab
@@ -508,7 +589,7 @@ func sidebarTabText(txt string) (isPeople, isTab bool) {
 	switch txt {
 	case "People", ls.PeopleTab:
 		return true, true
-	case "Devices", "Items", "Me", ls.DevicesTab, ls.ItemsTab:
+	case "Devices", "Items", "Me", ls.DevicesTab, ls.ItemsTab, ls.MeTab:
 		return false, true
 	default:
 		return false, false
@@ -550,8 +631,9 @@ func looksLikeTimeSuffix(s string) bool {
 
 func isDistance(s string) bool {
 	s = strings.ToLower(strings.TrimSpace(s))
-	// macOS 27 shows "Nearby" in the distance column for things within range.
-	if s == "nearby" {
+	// macOS 27 shows "Nearby" (localized) in the distance column for things
+	// within range.
+	if s == "nearby" || (GetAppStrings().NearbyLabel != "" && s == strings.ToLower(GetAppStrings().NearbyLabel)) {
 		return true
 	}
 	for _, suffix := range []string{" mi", " km", " ft", " m", " yd"} {
@@ -602,39 +684,12 @@ func isThisDeviceLabel(s string) bool {
 // Layout mirrors People (avatar/icon column on left, text band middle, distance
 // right) but rows can also carry a battery indicator OCR'd as "82%" or similar.
 // Battery percentages are extracted into the Battery field; everything else
-// follows the same row-walk logic as ParsePeople.
+// follows the same row grouping as ParsePeople.
 func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
-	rows := sidebarRows(lines, sidebarRightPx, textColMinPx)
-
-	skip := GetAppStrings().SkipWords()
-
-	devices := make([]Device, 0)
-	var current *Device
-	for _, l := range rows {
-		txt := strings.TrimSpace(l.Text)
-		if skip[txt] {
-			continue
-		}
-		if isDistance(txt) {
-			if current != nil {
-				current.Distance = txt
-			}
-			continue
-		}
-		if isBattery(txt) {
-			if current != nil {
-				current.Battery = txt
-			}
-			continue
-		}
-		if current == nil || current.Location != "" {
-			devices = append(devices, Device{Name: txt})
-			current = &devices[len(devices)-1]
-			continue
-		}
-		loc, stale := splitLocationStaleness(txt)
-		current.Location = loc
-		current.Staleness = stale
+	entries := parseSidebarEntries(sidebarRows(lines, sidebarRightPx, textColMinPx), true)
+	devices := make([]Device, 0, len(entries))
+	for _, e := range entries {
+		devices = append(devices, Device{Name: e.Name, Location: e.Location, Staleness: e.Staleness, Distance: e.Distance, Battery: e.Battery})
 	}
 	return devices
 }
@@ -643,37 +698,10 @@ func ParseDevices(lines []TextLine, sidebarRightPx, textColMinPx int) []Device {
 // The layout mirrors Devices (icon column on left, text band middle, distance
 // right) and can also carry a battery indicator OCR'd as "82%" or similar.
 func ParseItems(lines []TextLine, sidebarRightPx, textColMinPx int) []Item {
-	rows := sidebarRows(lines, sidebarRightPx, textColMinPx)
-
-	skip := GetAppStrings().SkipWords()
-
-	items := make([]Item, 0)
-	var current *Item
-	for _, l := range rows {
-		txt := strings.TrimSpace(l.Text)
-		if skip[txt] {
-			continue
-		}
-		if isDistance(txt) {
-			if current != nil {
-				current.Distance = txt
-			}
-			continue
-		}
-		if isBattery(txt) {
-			if current != nil {
-				current.Battery = txt
-			}
-			continue
-		}
-		if current == nil || current.Location != "" {
-			items = append(items, Item{Name: txt})
-			current = &items[len(items)-1]
-			continue
-		}
-		loc, stale := splitLocationStaleness(txt)
-		current.Location = loc
-		current.Staleness = stale
+	entries := parseSidebarEntries(sidebarRows(lines, sidebarRightPx, textColMinPx), true)
+	items := make([]Item, 0, len(entries))
+	for _, e := range entries {
+		items = append(items, Item{Name: e.Name, Location: e.Location, Staleness: e.Staleness, Distance: e.Distance, Battery: e.Battery})
 	}
 	return items
 }

@@ -81,3 +81,88 @@ func TestIsDistanceNearby(t *testing.T) {
 		t.Error(`isDistance("Nearby") = false`)
 	}
 }
+
+// watch scales the same constants as the one-shot commands; it once used an
+// 80pt cutoff that dropped every macOS 27 row.
+func TestParseDevicesMacOS27SidebarAtSharedLayout(t *testing.T) {
+	got := ParseDevices(macOS27DevicesLines(), SidebarRightPt*2, TextColumnMinPt*2)
+	if len(got) != 5 {
+		t.Fatalf("got %d devices at the shared layout, want 5: %#v", len(got), got)
+	}
+}
+
+func TestLocaleTableHasMacOS27Labels(t *testing.T) {
+	for lang, s := range localeTable {
+		if s.MeTab == "" || s.NearbyLabel == "" {
+			t.Errorf("%s: MeTab=%q NearbyLabel=%q, want both set", lang, s.MeTab, s.NearbyLabel)
+		}
+	}
+	if fr := lookupStrings("fr"); fr.MeTab != "Moi" || fr.NearbyLabel != "À proximité" {
+		t.Errorf("fr labels = %q / %q", fr.MeTab, fr.NearbyLabel)
+	}
+}
+
+// A scrolled macOS 27 Items sidebar: the top row is half under the header so
+// only its status line shows, a section header sits in the left gutter, and
+// shared items carry a third "Shared with" line. Before rows were grouped by
+// vertical gap, each of these shifted every following row by one line.
+func TestParseItemsMacOS27ScrolledWithSharedRows(t *testing.T) {
+	l := func(y, x, w, h int, text string) TextLine {
+		return TextLine{Text: text, Confidence: 1, X: x, Y: y, Width: w, Height: h}
+	}
+	lines := []TextLine{
+		l(127, 59, 89, 28, "People"),
+		l(127, 199, 98, 24, "Devices"),
+		l(127, 357, 71, 21, "Items"),
+		l(125, 514, 41, 26, "Me"),
+		l(208, 565, 35, 32, "+"),
+		l(211, 29, 119, 32, "Items"),
+		l(284, 118, 209, 29, "Home • 4 min. ago •"),
+		l(375, 118, 177, 36, "Blue Keys"),
+		l(382, 517, 95, 24, "2,324 mi"),
+		l(413, 118, 194, 24, "Home • 4 min. ago"),
+		l(1018, 118, 194, 30, "Shed Keys"),
+		l(1056, 119, 190, 21, "No location found"),
+		l(1169, 26, 285, 27, "Items Shared With Me"),
+		l(1253, 118, 215, 28, "Sam's Luggage"),
+		l(1291, 119, 300, 24, "Washington, DC • 2 min. ago"),
+		l(1324, 119, 193, 18, "Shared with Sam"),
+		l(1413, 119, 220, 30, "Jo's Backpack"),
+		l(1449, 118, 194, 24, "Home • 8 min. ago"),
+		l(1481, 119, 187, 21, "Shared with Jo"),
+	}
+	got := ParseItems(lines, SidebarRightPt*2, TextColumnMinPt*2)
+	want := []Item{
+		{Name: "Blue Keys", Location: "Home", Staleness: "4 min. ago", Distance: "2,324 mi"},
+		{Name: "Shed Keys", Location: "No location found"},
+		{Name: "Sam's Luggage", Location: "Washington, DC", Staleness: "2 min. ago"},
+		{Name: "Jo's Backpack", Location: "Home", Staleness: "8 min. ago"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d items, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("item %d = %#v, want %#v", i, got[i], want[i])
+		}
+	}
+}
+
+// Vision sometimes reads "mi" as "ml"; the right-hand column is the distance
+// whatever its text, so it must not become the location.
+func TestParseDevicesDistanceByColumn(t *testing.T) {
+	l := func(y, x, w int, text string) TextLine {
+		return TextLine{Text: text, Confidence: 1, X: x, Y: y, Width: w, Height: 24}
+	}
+	lines := []TextLine{
+		l(127, 59, 89, "People"), l(127, 196, 104, "Devices"), l(127, 354, 74, "Items"), l(125, 514, 41, "Me"),
+		l(389, 119, 199, "Alex's AirPods"),
+		l(395, 544, 68, "2,317 ml"),
+		l(425, 119, 261, "Redmond, WA • 5 hr. ago"),
+	}
+	got := ParseDevices(lines, SidebarRightPt*2, TextColumnMinPt*2)
+	want := Device{Name: "Alex's AirPods", Location: "Redmond, WA", Staleness: "5 hr. ago", Distance: "2,317 ml"}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("got %#v, want [%#v]", got, want)
+	}
+}

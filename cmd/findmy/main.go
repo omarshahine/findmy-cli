@@ -868,7 +868,7 @@ func zoomDelay() time.Duration {
 // non-integer pixel-per-point ratios.
 func pixelLayout(w *findmy.Window, imagePath string) (sidebarRightPx, textColMinPx int) {
 	scale := imageScale(w, imagePath)
-	return int(340 * scale), int(60 * scale)
+	return int(findmy.SidebarRightPt * scale), int(findmy.TextColumnMinPt * scale)
 }
 
 func windowPointFromImagePoint(w *findmy.Window, imagePath string, px, py int) (int, int) {
