@@ -48,8 +48,9 @@ jobs:
           node -e "const f='openclaw.plugin.json',j=require('./'+f);j.version='$V';require('fs').writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
 
       # --ignore-scripts: the openclaw devDependency's preinstall refuses
-      # Node < 24.16, and the build here is only tsc, which needs none of
-      # its install scripts. v0.4.0's ClawHub publish failed on exactly this.
+      # Node < 24.16. The build uses tsup; its esbuild and rollup binaries
+      # arrive through optional platform packages, so no install script is
+      # needed. v0.4.0's ClawHub publish failed on exactly this.
       - name: Install + build (compile TS so clawhub validator finds dist/)
         run: |
           cd openclaw
