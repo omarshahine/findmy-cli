@@ -259,14 +259,14 @@ All four distribution channels in one repo:
 
 | Surface | Source of truth | Auto-published |
 |---|---|---|
-| Homebrew formula | [`omarshahine/homebrew-tap`](https://github.com/omarshahine/homebrew-tap) `Formula/findmy-cli.rb` | manual on tag |
+| Homebrew formula | [`omarshahine/homebrew-tap`](https://github.com/omarshahine/homebrew-tap) `Formula/findmy-cli.rb` | GH Actions on tag push |
 | NPM package | `openclaw/package.json` | GH Actions on tag push |
 | ClawHub package | same as NPM, source-linked to commit | GH Actions on tag push |
 | Claude Code plugin | `.claude-plugin/plugin.json` (bundle format) | manual linked install |
 
-CI workflows under `.github/workflows/` handle NPM and ClawHub on every
-`v*` tag push (OIDC trusted publishing for NPM, `CLAWHUB_TOKEN` for
-ClawHub). Homebrew formula bump is still manual.
+CI workflows under `.github/workflows/` handle NPM, ClawHub and the Homebrew
+formula on every `v*` tag push (OIDC trusted publishing for NPM,
+`CLAWHUB_TOKEN` for ClawHub, `HOMEBREW_TAP_TOKEN` for the tap).
 
 The Claude Code wrapper (`scripts/findmy.sh`) builds `bin/findmy` and
 `bin/findmy-helper` on first invocation via `make`. No binaries are
