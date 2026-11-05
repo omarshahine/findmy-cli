@@ -50,12 +50,15 @@ func TestLookupStringsHasItemsTab(t *testing.T) {
 
 func TestParseDisplayNameIgnoresBundleFileName(t *testing.T) {
 	cases := map[string]string{
-		"Find My\n":    "Find My",
-		"Localiser":    "Localiser",
-		"FindMy\n":     "",
-		"FindMy.app\n": "",
-		"(null)":       "",
-		"":             "",
+		"Find My\n":       "Find My",
+		"Find My.app\n":   "Find My",
+		"Localiser.app\n": "Localiser",
+		"Wo ist?.app\n":   "Wo ist?",
+		"Localiser":       "Localiser",
+		"FindMy\n":        "",
+		"FindMy.app\n":    "",
+		"(null)":          "",
+		"":                "",
 	}
 	for in, want := range cases {
 		if got := parseDisplayName(in); got != want {
