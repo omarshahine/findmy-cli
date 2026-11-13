@@ -106,7 +106,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "openclaw": "^2026.10.8",
+    "openclaw": "^2026.11.3",
     "tsup": "^9.0.0",
     "typescript": "^7.0.2"
   },
