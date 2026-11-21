@@ -818,10 +818,10 @@ func enrichWithDetailPane(w *findmy.Window, sidebarShotPath, detailShotPath stri
 
 func warnNoPreciseAddress(entityName string) {
 	fmt.Fprintf(os.Stderr, "warning: --zoom read no precise address for %q.\n", entityName)
-	fmt.Fprintln(os.Stderr, "         macOS 26 replaced FindMy's split view with a floating sidebar over a")
-	fmt.Fprintln(os.Stderr, "         full-window map. Selecting a row now opens a map callout carrying the")
-	fmt.Fprintln(os.Stderr, "         same coarse location as the sidebar, not a street address, so there is")
-	fmt.Fprintln(os.Stderr, "         nothing more precise on screen to read. See issue #13.")
+	fmt.Fprintln(os.Stderr, "         This zoom path reads the pane or map callout after selecting a row;")
+	fmt.Fprintln(os.Stderr, "         it does not open an ellipsis detail card. Such a card may contain a")
+	fmt.Fprintln(os.Stderr, "         fuller address on newer layouts. See issue #29. The coarse sidebar")
+	fmt.Fprintln(os.Stderr, "         location is retained; map labels are not used as a precise address.")
 }
 
 func zoomDelay() time.Duration {
