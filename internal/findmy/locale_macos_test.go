@@ -31,7 +31,7 @@ func TestWindowOwnerSwiftFixtures(t *testing.T) {
 		t.Fatal("expected exactly one WindowServer query to replace")
 	}
 	matcher = strings.Replace(matcher, liveQuery, "fixtureWindows", 1)
-	if strings.Contains(matcher, "CGWindowListCopyWindowInfo") {
+	if strings.Contains(matcher, "CGWindowListCopyWindowInfo(") {
 		t.Fatal("live WindowServer query remains in fixture source")
 	}
 	const fixtures = `import Foundation
