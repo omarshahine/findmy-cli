@@ -116,5 +116,11 @@
     "plugin:check": "npx --yes @openclaw/plugin-inspector inspect --no-openclaw",
     "plugin:ci": "npx --yes @openclaw/plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute",
     "prepack": "npm run build"
+  },
+  "overrides": {
+    "openclaw": {
+      "npm": "12.2.2",
+      "undici": "8.12.4"
+    }
   }
 }
