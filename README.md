@@ -213,14 +213,16 @@ diagnostic — TCC denied is more common than missing display.
 
 ## Limitations
 
-- **`--zoom` yields no street address on macOS 26 and later.** macOS 26
-  replaced FindMy's split view with a floating sidebar over a full-window map.
-  A row click no longer opens a detail pane; it opens a callout pinned to the
-  map carrying the same coarse location and staleness the sidebar already
-  showed. There is nothing more precise on screen to OCR, so `--zoom` prints a
-  warning to stderr and leaves `precise_address` unset rather than guessing.
-  Everything else — `people`, `devices`, `items`, `watch`, `log` — is
-  unaffected. Tracked in [#13](https://github.com/omarshahine/findmy-cli/issues/13).
+- **`--zoom` may not read a street address on redesigned Find My layouts.**
+  The current `person` and `device` zoom path clicks the sidebar row and reads
+  the resulting pane or map callout. It does not open the ellipsis detail
+  card. A contributor demonstrated an Items detail card with a fuller address
+  on macOS 27.2 in [#29](https://github.com/omarshahine/findmy-cli/issues/29);
+  the current `item` command does not implement address enrichment or `--zoom`.
+  If the current zoom path finds no address, it warns on stderr and leaves
+  `precise_address` unset rather than treating map labels as an address.
+  Sidebar listing, `watch`, and `log` continue to work. The original map-label
+  regression is documented in [#13](https://github.com/omarshahine/findmy-cli/issues/13).
 - **`watch` reads only the rows that fit in the Find My window.** It polls on
   an interval, and scrolling the sidebar every poll would keep moving your
   pointer. Make the window tall enough for the rows you watch.
